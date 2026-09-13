@@ -1,0 +1,15 @@
+H Product:Blackbox
+H Data version:2
+H Firmware type:Betaflight
+H Firmware revision:Betaflight 4.4.2
+H Craft name:FPV_Recon_7in
+H Field I name:loopIteration,time,axisRate[0],axisRate[1],axisRate[2],rcCommand[0],rcCommand[1],rcCommand[2],rcCommand[3],vbatLatest,amperageLatest,magADC[0],magADC[1],magADC[2],BaroAlt,motor[0],motor[1],motor[2],motor[3]
+H Field G name:time,GPS_numSat,GPS_coord[0],GPS_coord[1],GPS_altitude,GPS_speed,GPS_ground_course
+E,0,ARMED
+G,1000000,12,19.1334000,72.9133000,5.0,1.2,45.0
+G,2000000,14,19.1345000,72.9142000,30.0,12.5,48.0
+G,3000000,15,19.1360000,72.9158000,60.0,18.0,50.0
+G,4000000,15,19.1378000,72.9172000,85.0,22.0,52.0
+G,5000000,14,19.1352000,72.9150000,45.0,15.0,225.0
+G,6000000,12,19.1334000,72.9133000,2.0,1.0,225.0
+E,6500000,DISARMED

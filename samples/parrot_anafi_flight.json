@@ -1,0 +1,14 @@
+{
+  "product_name": "Parrot Anafi 4K",
+  "run_id": "P-RUN-2026-0913-001",
+  "serial_number": "PI040384AA8J000123",
+  "date": "2026-09-13T10:30:00Z",
+  "details": [
+    { "timestamp_utc": "2026-09-13T10:30:01Z", "latitude": 19.1334, "longitude": 72.9133, "altitude": 1.5, "speed": 0.2, "battery_level": 98 },
+    { "timestamp_utc": "2026-09-13T10:30:05Z", "latitude": 19.1341, "longitude": 72.9139, "altitude": 18.2, "speed": 4.1, "battery_level": 96 },
+    { "timestamp_utc": "2026-09-13T10:30:10Z", "latitude": 19.1350, "longitude": 72.9148, "altitude": 38.0, "speed": 6.8, "battery_level": 93 },
+    { "timestamp_utc": "2026-09-13T10:30:15Z", "latitude": 19.1362, "longitude": 72.9160, "altitude": 55.4, "speed": 7.5, "battery_level": 89 },
+    { "timestamp_utc": "2026-09-13T10:30:20Z", "latitude": 19.1345, "longitude": 72.9142, "altitude": 28.0, "speed": 5.2, "battery_level": 85 },
+    { "timestamp_utc": "2026-09-13T10:30:25Z", "latitude": 19.1334, "longitude": 72.9133, "altitude": 1.0, "speed": 0.1, "battery_level": 82 }
+  ]
+}

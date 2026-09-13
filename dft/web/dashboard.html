@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drone Forensic Toolkit (DFT) — Investigation Console</title>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Leaflet CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  #map { height: 500px; width: 100%; border-radius: 0.75rem; z-index: 10; }
+  .hash-font { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
+
+<!-- Top Navigation -->
+<header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+  <div class="flex items-center space-x-3">
+    <div class="bg-sky-500 text-slate-950 p-2 rounded-lg font-black text-xl tracking-wider">DFT</div>
+    <div>
+      <h1 class="text-lg font-bold text-white tracking-wide">DRONE FORENSIC TOOLKIT</h1>
+      <p class="text-xs text-sky-400 font-medium">ISO/IEC 27037:2012 & 27042:2015 Digital Forensics</p>
+    </div>
+  </div>
+
+  <div class="flex items-center space-x-4">
+    <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+      <span class="text-xs text-slate-400 font-medium">ACTIVE CASE:</span>
+      <select id="caseSelector" onchange="onCaseChange()" class="bg-slate-900 text-sky-300 text-sm font-semibold rounded px-2 py-1 outline-none border border-slate-700">
+        <option value="">-- No Case Selected --</option>
+      </select>
+    </div>
+
+    <button onclick="openNewCaseModal()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow flex items-center space-x-1">
+      <span>+ New Case</span>
+    </button>
+
+    <div id="cocBadge" class="hidden items-center space-x-1.5 bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs px-2.5 py-1.5 rounded-lg font-medium">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      <span>Chain-of-Custody Verified</span>
+    </div>
+  </div>
+</header>
+
+<!-- Main Container -->
+<main class="flex-1 flex overflow-hidden">
+  <!-- Left Navigation Bar -->
+  <aside class="w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col justify-between">
+    <nav class="space-y-1">
+      <button onclick="switchTab('mapTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition active-tab bg-slate-800 text-sky-400">
+        <span>🛰️</span> <span>Flight Trajectory</span>
+      </button>
+      <button onclick="switchTab('geofenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>🛡️</span> <span>Geofence Manager</span>
+      </button>
+      <button onclick="switchTab('evidenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>📦</span> <span>Evidence & Hashes</span>
+      </button>
+      <button onclick="switchTab('timelineTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>⏱️</span> <span>Event Timeline</span>
+      </button>
+      <button onclick="switchTab('anomaliesTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>⚠️</span> <span>Anomaly Detection</span>
+      </button>
+      <button onclick="switchTab('auditTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>📜</span> <span>Chain of Custody</span>
+      </button>
+      <button onclick="switchTab('reportsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>📑</span> <span>Court Reports</span>
+      </button>
+    </nav>
+
+    <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400">
+      <div class="flex items-center justify-between text-slate-300 font-semibold mb-1">
+        <span>Write-Block Engine</span>
+        <span class="text-emerald-400 font-mono">ACTIVE</span>
+      </div>
+      <p class="text-[11px] text-slate-500">Laptop ports software read-only verification engaged.</p>
+    </div>
+  </aside>
+
+  <!-- Right Content View Area -->
+  <section class="flex-1 overflow-y-auto p-6 bg-slate-950">
+
+    <!-- TAB 1: FLIGHT MAP & TRAJECTORY -->
+    <div id="mapTab" class="tab-pane space-y-6">
+      <!-- Stats Cards Row 1 -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Platform Family</p>
+          <p id="statPlatform" class="text-xl font-bold text-sky-400 mt-1">--</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Total Distance</p>
+          <p id="statDistance" class="text-xl font-bold text-slate-100 mt-1">0 m</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Peak Altitude</p>
+          <p id="statAltitude" class="text-xl font-bold text-slate-100 mt-1">0 m</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Geofence Breaches</p>
+          <p id="statViolations" class="text-xl font-bold text-red-400 mt-1">0</p>
+        </div>
+      </div>
+
+      <!-- Stats Cards Row 2: Lifecycle & Arming Telemetry -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <div class="flex items-center justify-between">
+            <p class="text-xs text-slate-400 font-medium uppercase">Armed At (UTC)</p>
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          </div>
+          <p id="statArmed" class="text-sm font-bold font-mono text-emerald-400 mt-1 truncate">--</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <div class="flex items-center justify-between">
+            <p class="text-xs text-slate-400 font-medium uppercase">Disarmed At (UTC)</p>
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+          </div>
+          <p id="statDisarmed" class="text-sm font-bold font-mono text-amber-400 mt-1 truncate">--</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Airborne Duration</p>
+          <p id="statDuration" class="text-xl font-bold text-slate-100 mt-1">0 s</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Telemetry Points</p>
+          <p id="statTelemetry" class="text-xl font-bold text-sky-400 mt-1">0</p>
+        </div>
+      </div>
+
+      <!-- Map Container -->
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-sm font-semibold text-slate-200">Reconstructed Flight Trajectory & Active Zones</h2>
+          <div class="flex space-x-2 text-xs">
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-medium">Trajectory (Blue)</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-medium">Restricted Zones (Red)</span>
+          </div>
+        </div>
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <!-- TAB 2: GEOFENCE MANAGER -->
+    <div id="geofenceTab" class="tab-pane hidden space-y-6">
+
+      <!-- REAL-WORLD RESTRICTED AIRSPACE CATALOG (DGCA / ICAO / FAA) -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🌐</span>
+              <h2 class="text-base font-bold text-white tracking-wide">Real-World Restricted Airspace Catalog (DGCA / ICAO / FAA)</h2>
+              <span id="catalogCountBadge" class="bg-sky-950 text-sky-300 border border-sky-800 text-[10px] font-bold px-2 py-0.5 rounded font-mono">35+ Airspaces</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Ground-truth coordinates for civil airports, aerodromes, military airbases, government secretariats, and strategic installations.</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button onclick="loadAllPresetsIntoCase()" class="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow flex items-center space-x-1.5">
+              <span>⚡</span> <span>Import All 35+ Real-Life Airspaces</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Filters & Search Toolbar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="filterCatalogCategory('ALL', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-semibold bg-sky-600 text-white transition">All</button>
+            <button onclick="filterCatalogCategory('AIRPORT', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">✈️ Civil Airports</button>
+            <button onclick="filterCatalogCategory('AIRDROME', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">🚁 Aerodromes</button>
+            <button onclick="filterCatalogCategory('MILITARY_AIRFORCE', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">⚔️ Military Airbases</button>
+            <button onclick="filterCatalogCategory('GOVERNMENT', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">🏛️ Government</button>
+            <button onclick="filterCatalogCategory('STRATEGIC_NUCLEAR', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">⚛️ Strategic & Nuclear</button>
+            <button onclick="filterCatalogCategory('PRISON', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">🔒 Prisons</button>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <select id="catalogRegionSelect" onchange="onCatalogRegionChange()" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1.5 outline-none">
+              <option value="ALL">All Regions</option>
+              <option value="Mumbai / MMR">Mumbai / MMR</option>
+              <option value="Delhi NCR">Delhi NCR</option>
+              <option value="Bengaluru">Bengaluru</option>
+              <option value="Hyderabad">Hyderabad</option>
+              <option value="Chennai">Chennai</option>
+              <option value="Maharashtra">Maharashtra / Pune</option>
+              <option value="Goa">Goa</option>
+              <option value="International (USA)">USA</option>
+              <option value="International (UK)">UK</option>
+              <option value="International (UAE)">UAE</option>
+              <option value="International (Singapore)">Singapore</option>
+            </select>
+            <input id="catalogSearchInput" type="text" placeholder="Search facilities..." oninput="onCatalogSearchInput()" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1.5 outline-none w-36 md:w-48 placeholder-slate-500" />
+          </div>
+        </div>
+
+        <!-- Catalog Items Table -->
+        <div class="overflow-x-auto max-h-64 overflow-y-auto border border-slate-800 rounded-lg">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950 text-slate-400 uppercase sticky top-0 border-b border-slate-800 z-10">
+              <tr>
+                <th class="p-2.5">Zone ID</th>
+                <th class="p-2.5">Restricted Space / Facility</th>
+                <th class="p-2.5">Category & Authority</th>
+                <th class="p-2.5">Region</th>
+                <th class="p-2.5">Class / Ceiling</th>
+                <th class="p-2.5">Perimeter</th>
+                <th class="p-2.5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="catalogTableBody" class="divide-y divide-slate-800 bg-slate-950/40"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- CUSTOM INVESTIGATOR GEOFENCE BUILDER -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <h2 class="text-base font-bold text-white mb-1">Custom Investigator-Configured Geofence</h2>
+        <p class="text-xs text-slate-400 mb-4">Draw or configure custom investigation perimeters, altitude ceilings, and temporal constraints.</p>
+
+        <!-- 2-Column Geofence Builder: Inputs on Left, Interactive Preview Map on Right -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <!-- Left Column: Parameters -->
+          <div class="lg:col-span-5 space-y-4 flex flex-col justify-between">
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Zone Name</label>
+                <input id="geoName" type="text" placeholder="e.g. Sensitive Installation A" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Zone Type</label>
+                  <select id="geoZoneType" onchange="toggleZoneInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
+                    <option value="circle">Circular Radius Zone</option>
+                    <option value="polygon">Custom Polygon Perimeter</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Max Altitude Ceiling (m)</label>
+                  <input id="geoMaxAlt" type="number" placeholder="e.g. 50" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                </div>
+              </div>
+
+              <!-- Circle Inputs -->
+              <div id="circleInputs" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Center Latitude</label>
+                    <input id="geoCenterLat" type="number" step="0.0001" placeholder="19.1350" oninput="updateCirclePreviewFromInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Center Longitude</label>
+                    <input id="geoCenterLon" type="number" step="0.0001" placeholder="72.9150" oninput="updateCirclePreviewFromInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Radius (meters)</label>
+                  <input id="geoRadius" type="number" value="250" placeholder="250" oninput="updateCirclePreviewFromInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                </div>
+              </div>
+
+              <!-- Polygon Inputs -->
+              <div id="polygonInputs" class="hidden space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="block text-xs font-semibold text-slate-300">Polygon Coordinates ([lat, lon])</label>
+                  <span id="geoPolygonCount" class="text-[10px] text-sky-400 font-mono">0 vertices</span>
+                </div>
+                <textarea id="geoCoords" rows="4" placeholder="[[19.133, 72.913], [19.137, 72.913], [19.137, 72.917], [19.133, 72.917]]" oninput="updatePolygonPreviewFromTextarea()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono"></textarea>
+              </div>
+            </div>
+
+            <div class="pt-2 flex items-center space-x-3">
+              <button onclick="submitNewGeofence()" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md">
+                + Add Custom Geofence Zone
+              </button>
+              <button type="button" onclick="clearGeofencePreview()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium px-3 py-2.5 rounded-lg transition border border-slate-700">
+                Clear Shape
+              </button>
+            </div>
+          </div>
+
+          <!-- Right Column: Interactive Preview Map -->
+          <div class="lg:col-span-7 flex flex-col bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center space-x-2">
+                <span class="text-xs font-semibold text-slate-200">Interactive Airspace Preview Map</span>
+                <span id="geoModeBadge" class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono font-bold">CIRCLE MODE</span>
+              </div>
+              <span id="geoInstructionHint" class="text-[11px] text-sky-400 font-medium">Click map to place Center</span>
+            </div>
+            <div id="geoPreviewMap" style="height: 320px; min-height: 320px;" class="rounded-lg border border-slate-800 w-full z-0"></div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">
+              <span>🔵 Cyan: Flight Trajectory | 🔴 Red: Proposed Geofence</span>
+              <button type="button" onclick="centerPreviewOnDrone()" class="text-xs text-sky-400 hover:text-sky-300 underline">Recenter on Drone Track</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Zones List -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-white">Active Airspace Perimeters & Zones in Case</h3>
+          <span id="activeZonesCountBadge" class="text-xs text-slate-400">0 zones configured</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">Zone ID</th>
+                <th class="p-2.5">Zone / Facility Name</th>
+                <th class="p-2.5">Category & Authority</th>
+                <th class="p-2.5">Geometry</th>
+                <th class="p-2.5">Max Altitude</th>
+                <th class="p-2.5">Classification</th>
+              </tr>
+            </thead>
+            <tbody id="zonesTableBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Violations List -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-red-400">Detected Airspace & Geofence Infringements</h3>
+          <span id="violationsCountBadge" class="text-xs text-red-400 font-semibold font-mono">0 breaches</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">ID</th>
+                <th class="p-2.5">Restricted Space</th>
+                <th class="p-2.5">Category & Authority</th>
+                <th class="p-2.5">Timestamp</th>
+                <th class="p-2.5">Coordinates</th>
+                <th class="p-2.5">Altitude</th>
+                <th class="p-2.5">Infringement Details</th>
+              </tr>
+            </thead>
+            <tbody id="violationsTableBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: EVIDENCE INGESTION -->
+    <div id="evidenceTab" class="tab-pane hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <h2 class="text-base font-bold text-white mb-2">Ingest Digital Evidence (Software Write-Inhibited)</h2>
+        <p class="text-xs text-slate-400 mb-4">Select UAV flight log (.DAT, .bin, .log, .ulg, .pud, .bbl, .srt) or choose a pre-loaded sample dataset.</p>
+
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Select File from System</label>
+            <input id="evidenceFileInput" type="file" class="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Acquisition Mode</label>
+            <select id="acqMode" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
+              <option value="LOGICAL_EXTRACT">Logical Extraction (Read-Only Mount)</option>
+              <option value="PHYSICAL_IMAGE">Bit-level Physical Image (.dd/.E01)</option>
+              <option value="MANUAL_IMPORT">Manual Evidence Import</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <button onclick="uploadEvidence()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition">
+            Ingest & Hash Evidence
+          </button>
+          <span class="text-xs text-slate-500">or test with sample drone logs:</span>
+          <button onclick="loadSample('dji')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">DJI Mavic 3</button>
+          <button onclick="loadSample('ardupilot')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">ArduPilot</button>
+          <button onclick="loadSample('px4')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">PX4 Autopilot</button>
+          <button onclick="loadSample('parrot')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">Parrot Anafi</button>
+          <button onclick="loadSample('betaflight')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">Betaflight FPV</button>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <h3 class="text-sm font-bold text-white mb-3">Itemized Evidence Vault</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">Item ID</th>
+                <th class="p-2.5">File Name</th>
+                <th class="p-2.5">Size</th>
+                <th class="p-2.5">Platform</th>
+                <th class="p-2.5">Dual Hashes (SHA-256 / SHA-3)</th>
+                <th class="p-2.5">Write-Block</th>
+              </tr>
+            </thead>
+            <tbody id="evidenceTableBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: TIMELINE -->
+    <div id="timelineTab" class="tab-pane hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <h3 class="text-sm font-bold text-white mb-3">Reconstructed Master Event Timeline (UTC)</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">Timestamp (UTC)</th>
+                <th class="p-2.5">Category</th>
+                <th class="p-2.5">Severity</th>
+                <th class="p-2.5">Event Description</th>
+                <th class="p-2.5">Coordinates / Altitude</th>
+              </tr>
+            </thead>
+            <tbody id="timelineTableBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: ANOMALIES -->
+    <div id="anomaliesTab" class="tab-pane hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <h3 class="text-sm font-bold text-amber-400 mb-3">Detected Integrity & Flight Anomalies</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">ID</th>
+                <th class="p-2.5">Type</th>
+                <th class="p-2.5">Severity</th>
+                <th class="p-2.5">Timestamp</th>
+                <th class="p-2.5">Forensic Analysis Description</th>
+              </tr>
+            </thead>
+            <tbody id="anomaliesTableBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: AUDIT TRAIL -->
+    <div id="auditTab" class="tab-pane hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-sm font-bold text-emerald-400">Chain-of-Custody Cryptographic Audit Ledger</h3>
+          <button onclick="verifyChainOfCustody()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded transition">
+            Re-verify Chain Integrity
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">#</th>
+                <th class="p-2.5">Timestamp (UTC)</th>
+                <th class="p-2.5">Actor</th>
+                <th class="p-2.5">Action</th>
+                <th class="p-2.5">Details</th>
+                <th class="p-2.5">HMAC Signature</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody" class="divide-y divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 7: REPORTS -->
+    <div id="reportsTab" class="tab-pane hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+        <h2 class="text-base font-bold text-white mb-2">Court-Admissible Forensic Exports</h2>
+        <p class="text-xs text-slate-400 mb-6">Generated in accordance with ISO/IEC 27037:2012 (Identification, Collection, Acquisition, Preservation) and ISO/IEC 27042:2015 (Analysis and Interpretation).</p>
+
+        <div class="grid grid-cols-4 gap-4">
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+            <div>
+              <div class="text-2xl mb-2">📄</div>
+              <h4 class="text-sm font-bold text-white">Full Forensic Report</h4>
+              <p class="text-[11px] text-slate-400 mt-1">Court-ready HTML document with itemized tables and CoC sign-off.</p>
+            </div>
+            <button onclick="downloadReport('html')" class="mt-4 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold py-2 rounded">
+              Open / Print PDF
+            </button>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+            <div>
+              <div class="text-2xl mb-2">📊</div>
+              <h4 class="text-sm font-bold text-white">JSON Forensic Payload</h4>
+              <p class="text-[11px] text-slate-400 mt-1">Full machine-readable export of case, flight telemetry, and timeline.</p>
+            </div>
+            <button onclick="downloadReport('json')" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2 rounded">
+              Download JSON
+            </button>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+            <div>
+              <div class="text-2xl mb-2">🌍</div>
+              <h4 class="text-sm font-bold text-white">3D Google Earth KML</h4>
+              <p class="text-[11px] text-slate-400 mt-1">Spatial 3D flight trajectory with timestamps for Google Earth Pro.</p>
+            </div>
+            <button onclick="downloadReport('kml')" class="mt-4 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold py-2 rounded">
+              Download KML
+            </button>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+            <div>
+              <div class="text-2xl mb-2">🏛️</div>
+              <h4 class="text-sm font-bold text-white">DFXML Standard Export</h4>
+              <p class="text-[11px] text-slate-400 mt-1">NIST Digital Forensics XML evidence interchange document.</p>
+            </div>
+            <button onclick="downloadReport('dfxml')" class="mt-4 bg-purple-700 hover:bg-purple-600 text-white text-xs font-semibold py-2 rounded">
+              Download DFXML
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+</main>
+
+<!-- Modal: New Case -->
+<div id="newCaseModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl">
+    <h3 class="text-base font-bold text-white mb-3">Initialize New UAV Forensic Case</h3>
+    <div class="space-y-3 text-xs">
+      <div>
+        <label class="block font-semibold text-slate-300 mb-1">Case Identifier</label>
+        <input id="modalCaseId" type="text" placeholder="e.g. CASE-2026-IITB-01" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+      </div>
+      <div>
+        <label class="block font-semibold text-slate-300 mb-1">Case Title</label>
+        <input id="modalCaseName" type="text" placeholder="e.g. Unauthorized UAV Airspace Intrusion" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+      </div>
+      <div>
+        <label class="block font-semibold text-slate-300 mb-1">Investigator Name</label>
+        <input id="modalInvestigator" type="text" placeholder="e.g. Forensic Examiner S. Sharma" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+      </div>
+      <div>
+        <label class="block font-semibold text-slate-300 mb-1">Agency / Laboratory</label>
+        <input id="modalAgency" type="text" placeholder="e.g. Central Drone Forensic Laboratory" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+      </div>
+      <div>
+        <label class="block font-semibold text-slate-300 mb-1">Notes / Description</label>
+        <textarea id="modalDesc" rows="2" placeholder="Incident brief..." class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white"></textarea>
+      </div>
+    </div>
+    <div class="flex justify-end space-x-2 mt-5">
+      <button onclick="closeNewCaseModal()" class="px-3 py-1.5 rounded text-xs text-slate-400 hover:text-white">Cancel</button>
+      <button onclick="submitNewCase()" class="px-4 py-1.5 rounded text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white">Create Case</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let activeCaseId = null;
+  let leafletMap = null;
+  let flightPathLayer = null;
+  let zonesLayerGroup = null;
+
+  // Geofence interactive builder state
+  let activeGeoJson = null;
+  let geoPreviewMap = null;
+  let geoPreviewDronePath = null;
+  let geoPreviewShapeLayer = null;
+  let geoPreviewMarker = null;
+  let polygonPoints = [];
+
+  // Initialize Map
+  function initMap() {
+    if (!leafletMap) {
+      leafletMap = L.map('map').setView([19.1334, 72.9133], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(leafletMap);
+      zonesLayerGroup = L.layerGroup().addTo(leafletMap);
+    }
+  }
+
+  function switchTab(tabId) {
+    document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
+    document.getElementById(tabId).classList.remove('hidden');
+
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.classList.remove('bg-slate-800', 'text-sky-400');
+      btn.classList.add('text-slate-300');
+    });
+    event.currentTarget.classList.add('bg-slate-800', 'text-sky-400');
+
+    if (tabId === 'mapTab') {
+      setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 200);
+    } else if (tabId === 'geofenceTab') {
+      setTimeout(() => {
+        initGeoPreviewMap();
+        if (geoPreviewMap) {
+          geoPreviewMap.invalidateSize();
+          syncDronePathToPreviewMap();
+        }
+      }, 200);
+    }
+  }
+
+  // --- INTERACTIVE GEOFENCE PREVIEW MAP ---
+  function initGeoPreviewMap() {
+    if (!geoPreviewMap) {
+      geoPreviewMap = L.map('geoPreviewMap').setView([19.1334, 72.9133], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(geoPreviewMap);
+      geoPreviewMap.on('click', onGeoPreviewMapClick);
+    }
+  }
+
+  function syncDronePathToPreviewMap() {
+    if (!geoPreviewMap) return;
+    if (geoPreviewDronePath) {
+      geoPreviewMap.removeLayer(geoPreviewDronePath);
+      geoPreviewDronePath = null;
+    }
+    if (activeGeoJson && activeGeoJson.features && activeGeoJson.features.length > 0) {
+      geoPreviewDronePath = L.geoJSON(activeGeoJson, {
+        style: { color: '#0284c7', weight: 4, opacity: 0.85 },
+        pointToLayer: function(feature, latlng) {
+          return L.circleMarker(latlng, { radius: 5, fillColor: '#38bdf8', color: '#fff', weight: 1.5, fillOpacity: 0.9 });
+        }
+      }).addTo(geoPreviewMap);
+      geoPreviewMap.fitBounds(geoPreviewDronePath.getBounds(), { padding: [30, 30] });
+    }
+  }
+
+  function centerPreviewOnDrone() {
+    if (geoPreviewDronePath && geoPreviewMap) {
+      geoPreviewMap.fitBounds(geoPreviewDronePath.getBounds(), { padding: [30, 30] });
+    } else if (geoPreviewShapeLayer && geoPreviewMap) {
+      if (geoPreviewShapeLayer.getBounds) {
+        geoPreviewMap.fitBounds(geoPreviewShapeLayer.getBounds(), { padding: [30, 30] });
+      }
+    }
+  }
+
+  function onGeoPreviewMapClick(e) {
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    const type = document.getElementById('geoZoneType').value;
+
+    if (type === 'circle') {
+      document.getElementById('geoCenterLat').value = lat.toFixed(6);
+      document.getElementById('geoCenterLon').value = lng.toFixed(6);
+      const radInput = document.getElementById('geoRadius');
+      const radius = parseFloat(radInput.value) || 250;
+      if (!radInput.value) radInput.value = radius;
+      renderCirclePreview(lat, lng, radius);
+    } else {
+      polygonPoints.push([parseFloat(lat.toFixed(6)), parseFloat(lng.toFixed(6))]);
+      document.getElementById('geoCoords').value = JSON.stringify(polygonPoints);
+      document.getElementById('geoPolygonCount').textContent = `${polygonPoints.length} vertices`;
+      renderPolygonPreview(polygonPoints);
+    }
+  }
+
+  function renderCirclePreview(lat, lng, radius) {
+    initGeoPreviewMap();
+    if (geoPreviewShapeLayer) {
+      geoPreviewMap.removeLayer(geoPreviewShapeLayer);
+      geoPreviewShapeLayer = null;
+    }
+    if (geoPreviewMarker) {
+      geoPreviewMap.removeLayer(geoPreviewMarker);
+      geoPreviewMarker = null;
+    }
+
+    geoPreviewMarker = L.marker([lat, lng], { draggable: true }).addTo(geoPreviewMap);
+    geoPreviewMarker.on('drag', function(ev) {
+      const pos = ev.target.getLatLng();
+      document.getElementById('geoCenterLat').value = pos.lat.toFixed(6);
+      document.getElementById('geoCenterLon').value = pos.lng.toFixed(6);
+      if (geoPreviewShapeLayer) {
+        geoPreviewShapeLayer.setLatLng(pos);
+      }
+      document.getElementById('geoInstructionHint').textContent = `Center: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)} (Radius ${radius}m)`;
+    });
+
+    geoPreviewShapeLayer = L.circle([lat, lng], {
+      radius: radius || 250,
+      color: '#ef4444',
+      fillColor: '#ef4444',
+      fillOpacity: 0.25,
+      weight: 2
+    }).addTo(geoPreviewMap);
+
+    document.getElementById('geoInstructionHint').textContent = `Center: ${lat.toFixed(4)}, ${lng.toFixed(4)} (Radius ${radius || 250}m)`;
+  }
+
+  function renderPolygonPreview(coords) {
+    initGeoPreviewMap();
+    if (geoPreviewShapeLayer) {
+      geoPreviewMap.removeLayer(geoPreviewShapeLayer);
+      geoPreviewShapeLayer = null;
+    }
+    if (geoPreviewMarker) {
+      geoPreviewMap.removeLayer(geoPreviewMarker);
+      geoPreviewMarker = null;
+    }
+
+    if (!coords || coords.length === 0) return;
+
+    if (coords.length === 1) {
+      geoPreviewMarker = L.circleMarker(coords[0], { radius: 6, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.8 }).addTo(geoPreviewMap);
+      document.getElementById('geoInstructionHint').textContent = '1 vertex placed. Click more points to close perimeter.';
+    } else {
+      geoPreviewShapeLayer = L.polygon(coords, {
+        color: '#ef4444',
+        fillColor: '#ef4444',
+        fillOpacity: 0.25,
+        weight: 2
+      }).addTo(geoPreviewMap);
+      document.getElementById('geoInstructionHint').textContent = `${coords.length} vertices placed. Ready to save zone.`;
+    }
+  }
+
+  function updateCirclePreviewFromInputs() {
+    const lat = parseFloat(document.getElementById('geoCenterLat').value);
+    const lon = parseFloat(document.getElementById('geoCenterLon').value);
+    const rad = parseFloat(document.getElementById('geoRadius').value) || 250;
+    if (!isNaN(lat) && !isNaN(lon)) {
+      renderCirclePreview(lat, lon, rad);
+    }
+  }
+
+  function updatePolygonPreviewFromTextarea() {
+    try {
+      const parsed = JSON.parse(document.getElementById('geoCoords').value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        polygonPoints = parsed;
+        document.getElementById('geoPolygonCount').textContent = `${polygonPoints.length} vertices`;
+        renderPolygonPreview(polygonPoints);
+      }
+    } catch (e) {
+      // User is currently typing
+    }
+  }
+
+  function clearGeofencePreview() {
+    polygonPoints = [];
+    document.getElementById('geoCenterLat').value = '';
+    document.getElementById('geoCenterLon').value = '';
+    document.getElementById('geoCoords').value = '';
+    document.getElementById('geoPolygonCount').textContent = '0 vertices';
+    if (geoPreviewShapeLayer && geoPreviewMap) {
+      geoPreviewMap.removeLayer(geoPreviewShapeLayer);
+      geoPreviewShapeLayer = null;
+    }
+    if (geoPreviewMarker && geoPreviewMap) {
+      geoPreviewMap.removeLayer(geoPreviewMarker);
+      geoPreviewMarker = null;
+    }
+    const type = document.getElementById('geoZoneType').value;
+    document.getElementById('geoInstructionHint').textContent = type === 'circle' ? 'Click map to place Center' : 'Click map to place boundary perimeter points';
+  }
+
+  function toggleZoneInputs() {
+    const type = document.getElementById('geoZoneType').value;
+    if (type === 'circle') {
+      document.getElementById('circleInputs').classList.remove('hidden');
+      document.getElementById('polygonInputs').classList.add('hidden');
+      document.getElementById('geoModeBadge').textContent = 'CIRCLE MODE';
+      document.getElementById('geoInstructionHint').textContent = 'Click map to place Center';
+    } else {
+      document.getElementById('circleInputs').classList.add('hidden');
+      document.getElementById('polygonInputs').classList.remove('hidden');
+      document.getElementById('geoModeBadge').textContent = 'POLYGON MODE';
+      document.getElementById('geoInstructionHint').textContent = 'Click map to place boundary perimeter points';
+    }
+    clearGeofencePreview();
+  }
+
+  function openNewCaseModal() { document.getElementById('newCaseModal').classList.remove('hidden'); }
+  function closeNewCaseModal() { document.getElementById('newCaseModal').classList.add('hidden'); }
+
+  function clearDashboardView() {
+    document.getElementById('statPlatform').textContent = '--';
+    document.getElementById('statDistance').textContent = '0 m';
+    document.getElementById('statAltitude').textContent = '0 m';
+    document.getElementById('statViolations').textContent = '0';
+    document.getElementById('statArmed').textContent = '--';
+    document.getElementById('statDisarmed').textContent = '--';
+    document.getElementById('statDuration').textContent = '0 s';
+    document.getElementById('statTelemetry').textContent = '0';
+    document.getElementById('cocBadge').classList.add('hidden');
+    if (flightPathLayer && leafletMap) {
+      leafletMap.removeLayer(flightPathLayer);
+      flightPathLayer = null;
+    }
+    if (zonesLayerGroup) zonesLayerGroup.clearLayers();
+    if (geoPreviewDronePath && geoPreviewMap) {
+      geoPreviewMap.removeLayer(geoPreviewDronePath);
+      geoPreviewDronePath = null;
+    }
+    activeGeoJson = null;
+    clearGeofencePreview();
+    document.getElementById('evidenceTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No evidence ingested yet.</td></tr>';
+    document.getElementById('violationsTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No geofence infringements detected.</td></tr>';
+    document.getElementById('timelineTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No timeline events recorded.</td></tr>';
+    document.getElementById('anomaliesTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No anomalies detected.</td></tr>';
+    document.getElementById('auditTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No audit records found.</td></tr>';
+    document.getElementById('zonesTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No geofence perimeters configured.</td></tr>';
+  }
+
+  async function loadCases() {
+    try {
+      const res = await fetch('/api/cases');
+      const cases = await res.json();
+      const selector = document.getElementById('caseSelector');
+      selector.innerHTML = '';
+      if (cases.length === 0) {
+        selector.innerHTML = '<option value="">-- No Cases Found --</option>';
+        activeCaseId = null;
+        clearDashboardView();
+        return;
+      }
+      cases.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.case_id;
+        opt.textContent = `${c.case_id} — ${c.case_name}`;
+        selector.appendChild(opt);
+      });
+      if (!activeCaseId && cases.length > 0) {
+        activeCaseId = cases[0].case_id;
+      }
+      selector.value = activeCaseId;
+      refreshCaseData();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function onCaseChange() {
+    activeCaseId = document.getElementById('caseSelector').value;
+    refreshCaseData();
+  }
+
+  async function submitNewCase() {
+    const cid = document.getElementById('modalCaseId').value.trim();
+    const name = document.getElementById('modalCaseName').value.trim();
+    const inv = document.getElementById('modalInvestigator').value.trim();
+    const agency = document.getElementById('modalAgency').value.trim();
+    const desc = document.getElementById('modalDesc').value.trim();
+
+    if (!cid || !name) { alert('Please enter Case ID and Title'); return; }
+
+    const res = await fetch('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ case_id: cid, case_name: name, investigator_name: inv || 'Examiner', agency_name: agency || 'Forensic Lab', description: desc })
+    });
+
+    if (res.ok) {
+      closeNewCaseModal();
+      activeCaseId = cid;
+      await loadCases();
+    } else {
+      const err = await res.json();
+      alert('Error creating case: ' + err.detail);
+    }
+  }
+
+  async function refreshCaseData() {
+    if (!activeCaseId) return;
+
+    // 1. Fetch Case Overview
+    const caseRes = await fetch(`/api/cases/${activeCaseId}`);
+    const caseInfo = await caseRes.json();
+    document.getElementById('cocBadge').classList.toggle('hidden', !caseInfo.chain_of_custody_verified);
+
+    // 2. Fetch Summary & Stats
+    const sumRes = await fetch(`/api/cases/${activeCaseId}/summary`);
+    const summary = await sumRes.json();
+    document.getElementById('statPlatform').textContent = (summary.platform_detected || 'UNKNOWN').toUpperCase();
+    document.getElementById('statDistance').textContent = `${summary.total_distance_meters} m`;
+    document.getElementById('statAltitude').textContent = `${summary.max_altitude_m} m`;
+    document.getElementById('statViolations').textContent = summary.violations_count;
+    document.getElementById('statArmed').textContent = summary.arm_time_utc ? summary.arm_time_utc.replace('T', ' ').substring(0, 19) + ' UTC' : '--';
+    document.getElementById('statDisarmed').textContent = summary.disarm_time_utc ? summary.disarm_time_utc.replace('T', ' ').substring(0, 19) + ' UTC' : '--';
+    document.getElementById('statDuration').textContent = `${summary.total_duration_sec} s`;
+    document.getElementById('statTelemetry').textContent = summary.telemetry_count;
+
+    // 3. Render Flight Path on Map
+    const geoRes = await fetch(`/api/cases/${activeCaseId}/geojson`);
+    const geoData = await geoRes.json();
+    renderMapData(geoData);
+
+    // 4. Populate Tables
+    loadEvidenceTable();
+    loadGeofenceTable();
+    loadViolationsTable();
+    loadTimelineTable();
+    loadAnomaliesTable();
+    loadAuditTable();
+  }
+
+  function renderMapData(geojson) {
+    activeGeoJson = geojson;
+    initMap();
+    if (flightPathLayer) leafletMap.removeLayer(flightPathLayer);
+
+    if (geojson.features && geojson.features.length > 0) {
+      flightPathLayer = L.geoJSON(geojson, {
+        style: { color: '#38bdf8', weight: 4, opacity: 0.9 },
+        pointToLayer: function(feature, latlng) {
+          return L.circleMarker(latlng, { radius: 6, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 1.0 });
+        }
+      }).addTo(leafletMap);
+
+      leafletMap.fitBounds(flightPathLayer.getBounds(), { padding: [50, 50] });
+    }
+    syncDronePathToPreviewMap();
+  }
+
+  let cachedCatalog = [];
+  let currentCatalogCategory = 'ALL';
+  let currentCatalogRegion = 'ALL';
+  let catalogSearchTerm = '';
+
+  async function loadCatalog() {
+    try {
+      const res = await fetch('/api/geofence/catalog');
+      cachedCatalog = await res.json();
+      const badge = document.getElementById('catalogCountBadge');
+      if (badge) badge.textContent = `${cachedCatalog.length} Real-World Airspaces`;
+      renderCatalogTable();
+    } catch (e) {
+      console.error('Error loading catalog:', e);
+    }
+  }
+
+  function filterCatalogCategory(cat, btn) {
+    currentCatalogCategory = cat;
+    document.querySelectorAll('.catalog-filter-btn').forEach(b => {
+      b.classList.remove('bg-sky-600', 'text-white', 'font-semibold');
+      b.classList.add('bg-slate-800', 'text-slate-300');
+    });
+    if (btn) {
+      btn.classList.add('bg-sky-600', 'text-white', 'font-semibold');
+      btn.classList.remove('bg-slate-800', 'text-slate-300');
+    }
+    renderCatalogTable();
+  }
+
+  function onCatalogRegionChange() {
+    currentCatalogRegion = document.getElementById('catalogRegionSelect').value;
+    renderCatalogTable();
+  }
+
+  function onCatalogSearchInput() {
+    catalogSearchTerm = document.getElementById('catalogSearchInput').value.trim().toLowerCase();
+    renderCatalogTable();
+  }
+
+  function renderCatalogTable() {
+    const tbody = document.getElementById('catalogTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const filtered = cachedCatalog.filter(item => {
+      if (currentCatalogCategory !== 'ALL' && item.category !== currentCatalogCategory) return false;
+      if (currentCatalogRegion !== 'ALL' && item.city_region !== currentCatalogRegion) return false;
+      if (catalogSearchTerm) {
+        const str = `${item.zone_id} ${item.name} ${item.category} ${item.authority} ${item.city_region} ${item.description}`.toLowerCase();
+        if (!str.includes(catalogSearchTerm)) return false;
+      }
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No restricted airspaces match the selected filter.</td></tr>';
+      return;
+    }
+
+    const catIcons = {
+      'AIRPORT': '✈️',
+      'AIRDROME': '🚁',
+      'MILITARY_AIRFORCE': '⚔️',
+      'GOVERNMENT': '🏛️',
+      'STRATEGIC_NUCLEAR': '⚛️',
+      'PRISON': '🔒',
+      'CONTROLLED_BUFFER': '🟡'
+    };
+
+    filtered.forEach(z => {
+      const tr = document.createElement('tr');
+      const isRed = z.zone_class === 'RED' || z.max_altitude_m === 0;
+      const icon = catIcons[z.category] || '🛡️';
+
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-sky-400 font-semibold text-[11px] whitespace-nowrap">${z.zone_id}</td>
+        <td class="p-2.5">
+          <div class="font-medium text-white">${z.name}</div>
+          <div class="text-[10px] text-slate-400 truncate max-w-xs" title="${z.description || ''}">${z.description || ''}</div>
+        </td>
+        <td class="p-2.5 whitespace-nowrap">
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 font-medium">${icon} ${z.category}</span>
+          <div class="text-[10px] text-slate-400 mt-0.5">${z.authority || '--'}</div>
+        </td>
+        <td class="p-2.5 text-slate-300 whitespace-nowrap text-[11px]">${z.city_region || '--'}</td>
+        <td class="p-2.5 whitespace-nowrap">
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}">
+            ${isRed ? 'RED ZONE (0m)' : `YELLOW (${z.max_altitude_m}m)`}
+          </span>
+        </td>
+        <td class="p-2.5 text-slate-400 whitespace-nowrap text-[11px]">
+          ${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} pts polygon`}
+        </td>
+        <td class="p-2.5 text-right whitespace-nowrap">
+          <button onclick="importPresetIntoCase('${z.zone_id}')" class="bg-sky-700 hover:bg-sky-600 text-white text-[11px] font-semibold px-2.5 py-1 rounded transition shadow">
+            + Add to Case
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function importPresetIntoCase(presetId) {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/cases/${activeCaseId}/geofence/import-preset/${presetId}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Imported '${data.zone.name}' into Case ${activeCaseId}!\nBreaches detected: ${data.violations_detected}`);
+        await refreshCaseData();
+      } else {
+        const err = await res.json();
+        alert('Failed to import preset: ' + err.detail);
+      }
+    } catch (e) {
+      alert('Error importing preset: ' + e);
+    }
+  }
+
+  async function loadAllPresetsIntoCase() {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first.');
+      return;
+    }
+    if (!confirm(`Are you sure you want to load all 35+ real-world restricted airspaces into Case ${activeCaseId}?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/cases/${activeCaseId}/geofence/load-all-presets`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Successfully imported ${data.added_count} real-world restricted airspaces!\nTotal zones in case: ${data.total_zones}\nTotal breaches detected: ${data.violations_detected}`);
+        await refreshCaseData();
+      } else {
+        const err = await res.json();
+        alert('Failed to load presets: ' + err.detail);
+      }
+    } catch (e) {
+      alert('Error loading presets: ' + e);
+    }
+  }
+
+  async function loadGeofenceTable() {
+    const res = await fetch(`/api/cases/${activeCaseId}/geofence/zones`);
+    const zones = await res.json();
+    const tbody = document.getElementById('zonesTableBody');
+    tbody.innerHTML = '';
+
+    const countBadge = document.getElementById('activeZonesCountBadge');
+    if (countBadge) countBadge.textContent = `${zones.length} zones configured`;
+
+    if (zonesLayerGroup) zonesLayerGroup.clearLayers();
+
+    const catIcons = {
+      'AIRPORT': '✈️',
+      'AIRDROME': '🚁',
+      'MILITARY_AIRFORCE': '⚔️',
+      'GOVERNMENT': '🏛️',
+      'STRATEGIC_NUCLEAR': '⚛️',
+      'PRISON': '🔒',
+      'CONTROLLED_BUFFER': '🟡'
+    };
+
+    zones.forEach(z => {
+      const tr = document.createElement('tr');
+      const isRed = z.zone_class === 'RED' || z.is_preconfigured_nofly || z.max_altitude_m === 0;
+      const icon = catIcons[z.category] || '🛡️';
+
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-sky-400 font-bold">${z.zone_id}</td>
+        <td class="p-2.5">
+          <div class="font-medium text-white">${z.name}</div>
+          <div class="text-[10px] text-slate-400">${z.description || ''}</div>
+        </td>
+        <td class="p-2.5">
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 font-medium">${icon} ${z.category || 'CUSTOM'}</span>
+          <div class="text-[10px] text-slate-400 mt-0.5">${z.authority || (z.city_region || '--')}</div>
+        </td>
+        <td class="p-2.5 text-slate-300">${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} vertices polygon`}</td>
+        <td class="p-2.5 text-slate-300 font-mono">${z.max_altitude_m !== null ? z.max_altitude_m + 'm' : 'Unlimited'}</td>
+        <td class="p-2.5">
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}">
+            ${isRed ? 'RED ZONE (0m)' : `YELLOW (${z.max_altitude_m}m)`}
+          </span>
+        </td>
+      `;
+      tbody.appendChild(tr);
+
+      // Render zone on Leaflet map with rich popups
+      if (zonesLayerGroup) {
+        const color = isRed ? '#ef4444' : '#f59e0b';
+        const popupHtml = `
+          <div style="font-family: sans-serif; font-size: 11px; min-width: 180px; color: #0f172a;">
+            <div style="font-weight: bold; font-size: 12px; margin-bottom: 2px;">${z.name}</div>
+            <div style="margin-bottom: 4px;">
+              <span style="background: ${isRed ? '#fee2e2' : '#fef3c7'}; color: ${isRed ? '#b91c1c' : '#b45309'}; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 10px;">
+                ${isRed ? 'RED ZONE (0m NO-FLY)' : `YELLOW ZONE (${z.max_altitude_m}m)`}
+              </span>
+              <span style="color: #475569; font-weight: 600; margin-left: 4px;">${z.category || 'RESTRICTED'}</span>
+            </div>
+            ${z.authority ? `<div style="color: #475569; margin-bottom: 2px;">Authority: <strong>${z.authority}</strong></div>` : ''}
+            <div style="color: #64748b;">Max Ceiling: <strong>${z.max_altitude_m !== null ? z.max_altitude_m + 'm AGL' : 'Unlimited'}</strong></div>
+            <div style="color: #64748b; font-size: 10px; margin-top: 3px;">${z.description || ''}</div>
+          </div>
+        `;
+
+        if (z.zone_type === 'circle' && z.center_lat && z.center_lon) {
+          L.circle([z.center_lat, z.center_lon], { radius: z.radius_meters, color: color, fillColor: color, fillOpacity: 0.18, weight: 2 }).bindPopup(popupHtml).addTo(zonesLayerGroup);
+        } else if (z.zone_type === 'polygon' && z.coordinates.length > 0) {
+          L.polygon(z.coordinates, { color: color, fillColor: color, fillOpacity: 0.18, weight: 2 }).bindPopup(popupHtml).addTo(zonesLayerGroup);
+        }
+      }
+    });
+  }
+
+  async function loadViolationsTable() {
+    const res = await fetch(`/api/cases/${activeCaseId}/geofence/violations`);
+    const vios = await res.json();
+    const tbody = document.getElementById('violationsTableBody');
+    tbody.innerHTML = '';
+
+    const badge = document.getElementById('violationsCountBadge');
+    if (badge) badge.textContent = `${vios.length} breaches`;
+
+    if (vios.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No airspace or geofence infringements detected.</td></tr>';
+      return;
+    }
+    vios.forEach(v => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-red-400 font-bold">${v.violation_id}</td>
+        <td class="p-2.5 font-medium text-white">${v.zone_name}</td>
+        <td class="p-2.5 whitespace-nowrap">
+          <span class="px-2 py-0.5 rounded text-[10px] bg-red-950 text-red-300 font-semibold uppercase">${v.category || 'RESTRICTED'}</span>
+          <div class="text-[10px] text-slate-400 mt-0.5">${v.authority || '--'}</div>
+        </td>
+        <td class="p-2.5 text-slate-400 font-mono whitespace-nowrap">${v.timestamp_utc}</td>
+        <td class="p-2.5 text-slate-300 font-mono whitespace-nowrap">${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)}</td>
+        <td class="p-2.5 text-amber-300 font-semibold font-mono whitespace-nowrap">${v.altitude_m.toFixed(1)} m</td>
+        <td class="p-2.5 text-red-300 font-medium">
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 text-red-200 font-bold mr-1">${v.violation_type}</span>
+          ${v.details}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function submitNewGeofence() {
+    if (!activeCaseId) { alert('Select an active case first.'); return; }
+    const name = document.getElementById('geoName').value.trim();
+    const type = document.getElementById('geoZoneType').value;
+    const maxAlt = document.getElementById('geoMaxAlt').value ? parseFloat(document.getElementById('geoMaxAlt').value) : null;
+
+    if (!name) { alert('Enter zone name'); return; }
+
+    let payload = { name: name, zone_type: type, max_altitude_m: maxAlt };
+
+    if (type === 'circle') {
+      payload.center_lat = parseFloat(document.getElementById('geoCenterLat').value);
+      payload.center_lon = parseFloat(document.getElementById('geoCenterLon').value);
+      payload.radius_meters = parseFloat(document.getElementById('geoRadius').value);
+    } else {
+      try {
+        payload.coordinates = JSON.parse(document.getElementById('geoCoords').value);
+      } catch (e) {
+        alert('Invalid coordinates JSON'); return;
+      }
+    }
+
+    const res = await fetch(`/api/cases/${activeCaseId}/geofence/zones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      alert('Geofence zone added and evaluated!');
+      clearGeofencePreview();
+      document.getElementById('geoName').value = '';
+      refreshCaseData();
+    }
+  }
+
+  async function loadEvidenceTable() {
+    const res = await fetch(`/api/cases/${activeCaseId}`);
+    const data = await res.json();
+    const tbody = document.getElementById('evidenceTableBody');
+    tbody.innerHTML = '';
+    // We also can fetch evidence items directly or from report payload
+    const repRes = await fetch(`/api/cases/${activeCaseId}/report/json`);
+    const repData = await repRes.json();
+
+    repData.evidence_items.forEach(ev => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-sky-400 font-bold">${ev.item_id}</td>
+        <td class="p-2.5 font-medium text-white">${ev.file_name}</td>
+        <td class="p-2.5 text-slate-400">${(ev.file_size_bytes/1024).toFixed(1)} KB</td>
+        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] bg-sky-950 text-sky-300 font-bold uppercase">${ev.drone_platform}</span></td>
+        <td class="p-2.5 font-mono text-[11px] text-slate-300">
+          <div><span class="text-slate-500">SHA256:</span> ${ev.hashes.sha256.substring(0,24)}...</div>
+          <div><span class="text-slate-500">SHA3:</span> ${ev.hashes.sha3_256.substring(0,24)}...</div>
+        </td>
+        <td class="p-2.5 text-emerald-400 font-medium">✓ Verified</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadTimelineTable() {
+    const res = await fetch(`/api/cases/${activeCaseId}/timeline`);
+    const items = await res.json();
+    const tbody = document.getElementById('timelineTableBody');
+    tbody.innerHTML = '';
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No timeline events recorded.</td></tr>';
+      return;
+    }
+    items.forEach(it => {
+      const tr = document.createElement('tr');
+      const evType = (it.event_type || '').toUpperCase();
+      let typeBadge = '';
+      let rowClass = '';
+
+      if (evType === 'ARM' || evType === 'ARMED') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold uppercase">ARMED</span>`;
+        rowClass = 'bg-emerald-950/20';
+      } else if (evType === 'DISARM' || evType === 'DISARMED') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 border border-amber-700 font-bold uppercase">DISARMED</span>`;
+        rowClass = 'bg-amber-950/20';
+      } else if (evType === 'TAKEOFF') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-sky-950 text-sky-300 border border-sky-800 font-bold uppercase">TAKEOFF</span>`;
+      } else if (evType === 'LANDING' || evType === 'LAND') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold uppercase">LANDING</span>`;
+      } else if (it.category === 'GEOFENCE_BREACH') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-red-950 text-red-300 border border-red-800 font-bold uppercase">BREACH</span>`;
+      } else if (it.category === 'ANOMALY') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-purple-950 text-purple-300 border border-purple-800 font-bold uppercase">ANOMALY</span>`;
+      } else {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 uppercase">${it.category}</span>`;
+      }
+
+      if (rowClass) tr.className = rowClass;
+
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-slate-300">${it.timestamp_utc}</td>
+        <td class="p-2.5">${typeBadge}</td>
+        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${it.severity === 'CRITICAL' ? 'bg-red-950 text-red-300 border border-red-800 font-bold' : (it.severity === 'WARNING' ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-slate-800 text-slate-400')}">${it.severity}</span></td>
+        <td class="p-2.5 text-white font-medium">${it.description}</td>
+        <td class="p-2.5 text-slate-400 font-mono">${it.latitude !== null && it.latitude !== undefined ? `${it.latitude.toFixed(5)}, ${it.longitude.toFixed(5)} (${it.altitude_m !== null && it.altitude_m !== undefined ? it.altitude_m.toFixed(1) : 0}m)` : 'System / Telemetry'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadAnomaliesTable() {
+    const res = await fetch(`/api/cases/${activeCaseId}/anomalies`);
+    const anoms = await res.json();
+    const tbody = document.getElementById('anomaliesTableBody');
+    tbody.innerHTML = '';
+    if (anoms.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No anomalies detected. Integrity intact.</td></tr>';
+      return;
+    }
+    anoms.forEach(a => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-amber-400 font-bold">${a.anomaly_id}</td>
+        <td class="p-2.5 text-white font-medium">${a.anomaly_type}</td>
+        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 uppercase font-bold">${a.severity}</span></td>
+        <td class="p-2.5 font-mono text-slate-400">${a.timestamp_utc || 'N/A'}</td>
+        <td class="p-2.5 text-slate-300">${a.description}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function loadAuditTable() {
+    const res = await fetch(`/api/cases/${activeCaseId}/audit-trail`);
+    const logs = await res.json();
+    const tbody = document.getElementById('auditTableBody');
+    tbody.innerHTML = '';
+    logs.forEach(l => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="p-2.5 font-mono text-slate-500">#${l.entry_id}</td>
+        <td class="p-2.5 font-mono text-slate-400">${l.timestamp_utc}</td>
+        <td class="p-2.5 font-medium text-white">${l.actor}</td>
+        <td class="p-2.5 text-sky-400 font-semibold">${l.action}</td>
+        <td class="p-2.5 text-slate-300">${l.details}</td>
+        <td class="p-2.5 font-mono text-[10px] text-emerald-400">${l.signature.substring(0,16)}...</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function verifyChainOfCustody() {
+    const res = await fetch(`/api/cases/${activeCaseId}`);
+    const data = await res.json();
+    if (data.chain_of_custody_verified) {
+      alert('Chain-of-Custody Cryptographic Integrity: 100% UNCOMPROMISED.\nAll HMAC signatures and cryptographic pointers are valid.');
+    } else {
+      alert('Chain-of-Custody Compromised! ' + data.chain_error);
+    }
+  }
+
+  async function uploadEvidence() {
+    const fileInput = document.getElementById('evidenceFileInput');
+    if (!fileInput.files || fileInput.files.length === 0) {
+      alert('Please select an evidence file to ingest.');
+      return;
+    }
+    const mode = document.getElementById('acqMode').value;
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('acquisition_type', mode);
+    formData.append('actor', 'Forensic Investigator');
+
+    const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (res.ok) {
+      alert('Evidence successfully ingested, hashed, write-blocked, and parsed!');
+      fileInput.value = '';
+      refreshCaseData();
+    } else {
+      const err = await res.json();
+      alert('Error ingesting evidence: ' + err.detail);
+    }
+  }
+
+  async function loadSample(platform) {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first.');
+      return;
+    }
+    let sampleFile = '';
+    if (platform === 'dji') sampleFile = 'dji_mavic3_telemetry.srt';
+    else if (platform === 'ardupilot') sampleFile = 'ardupilot_flight.log';
+    else if (platform === 'px4') sampleFile = 'px4_mission.csv';
+    else if (platform === 'parrot') sampleFile = 'parrot_anafi_flight.json';
+    else if (platform === 'betaflight') sampleFile = 'betaflight_blackbox.txt';
+
+    // Fetch sample from static endpoint or ingest
+    const blobRes = await fetch(`/samples/${sampleFile}`);
+    if (!blobRes.ok) {
+      alert('Could not locate sample file: ' + sampleFile);
+      return;
+    }
+    const blob = await blobRes.blob();
+    const formData = new FormData();
+    formData.append('file', blob, sampleFile);
+    formData.append('acquisition_type', 'LOGICAL_EXTRACT');
+    formData.append('actor', 'Automated Ingestion Worker');
+
+    const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (res.ok) {
+      alert(`Sample evidence for ${platform.toUpperCase()} ingested and parsed!`);
+      refreshCaseData();
+    }
+  }
+
+  function downloadReport(format) {
+    if (!activeCaseId) return;
+    if (format === 'html') {
+      window.open(`/api/cases/${activeCaseId}/report/html`, '_blank');
+    } else if (format === 'json') {
+      window.open(`/api/cases/${activeCaseId}/report/json`, '_blank');
+    } else if (format === 'kml') {
+      window.open(`/api/cases/${activeCaseId}/kml`, '_blank');
+    } else if (format === 'dfxml') {
+      window.open(`/api/cases/${activeCaseId}/report/dfxml`, '_blank');
+    }
+  }
+
+  // Startup
+  window.onload = async () => {
+    initMap();
+    await loadCases();
+    await loadCatalog();
+  };
+</script>
+
+</body>
+</html>
