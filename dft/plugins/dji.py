@@ -116,43 +116,89 @@ class DJIPlugin(DroneForensicPlugin):
         """Parses decoded DJI flight records in CSV / tabular format."""
         points: List[TelemetryPoint] = []
         try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
+            with open(file_path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                lines = [l.strip() for l in f if l.strip()]
 
             if not lines:
                 return points
 
-            header = [h.strip() for h in lines[0].split(",")]
+            # Handle sep=, indicator line from Excel CSV exports
+            start_idx = 0
+            if lines[0].lower().startswith("sep="):
+                start_idx = 1
+                if len(lines) <= start_idx:
+                    return points
+
+            header = [h.strip() for h in lines[start_idx].split(",")]
             col_map = {name.lower(): idx for idx, name in enumerate(header)}
 
-            lat_idx = col_map.get("osd.latitude") or col_map.get("latitude") or col_map.get("lat")
-            lon_idx = col_map.get("osd.longitude") or col_map.get("longitude") or col_map.get("lon")
-            alt_idx = col_map.get("osd.height") or col_map.get("osd.altitude") or col_map.get("altitude") or col_map.get("height")
-            spd_idx = col_map.get("osd.hspeed") or col_map.get("speed")
-            bat_idx = col_map.get("osd.battery") or col_map.get("battery_pct")
-            time_idx = col_map.get("datetime") or col_map.get("timestamp") or col_map.get("time")
+            # Robust column discovery
+            def find_col(*patterns):
+                for pat in patterns:
+                    for k, idx in col_map.items():
+                        if pat in k:
+                            return idx
+                return None
 
-            for line in lines[1:]:
+            lat_idx = find_col("osd.latitude", "latitude", "lat")
+            lon_idx = find_col("osd.longitude", "longitude", "lon")
+            alt_ft_idx = find_col("osd.height [ft]", "height [ft]", "altitude [ft]")
+            alt_idx = find_col("osd.height [m]", "osd.height", "osd.altitude", "altitude", "height")
+            spd_idx = find_col("osd.hspeed", "speed")
+            bat_idx = find_col("osd.battery", "battery")
+            time_idx = find_col("custom.updatetime", "datetime", "timestamp", "time", "osd.flytime")
+            date_idx = find_col("custom.date")
+
+            # Determine downsampling step if file is massive (e.g. > 10,000 lines)
+            data_rows = lines[start_idx + 1:]
+            step = 1
+            if len(data_rows) > 3000:
+                step = len(data_rows) // 1000
+
+            for i in range(0, len(data_rows), step):
+                line = data_rows[i]
                 parts = [p.strip() for p in line.split(",")]
                 if lat_idx is not None and lon_idx is not None and len(parts) > max(lat_idx, lon_idx):
                     try:
                         lat = float(parts[lat_idx])
                         lon = float(parts[lon_idx])
-                        if lat == 0.0 and lon == 0.0:
+                        if abs(lat) < 0.0001 and abs(lon) < 0.0001:
                             continue
-                        alt = float(parts[alt_idx]) if alt_idx and len(parts) > alt_idx and parts[alt_idx] else 0.0
-                        spd = float(parts[spd_idx]) if spd_idx and len(parts) > spd_idx and parts[spd_idx] else 0.0
-                        bat = float(parts[bat_idx]) if bat_idx and len(parts) > bat_idx and parts[bat_idx] else None
-                        ts = parts[time_idx] if time_idx and len(parts) > time_idx and parts[time_idx] else datetime.now(timezone.utc).isoformat()
+
+                        alt = 0.0
+                        if alt_ft_idx is not None and len(parts) > alt_ft_idx and parts[alt_ft_idx]:
+                            alt = round(float(parts[alt_ft_idx]) * 0.3048, 2)
+                        elif alt_idx is not None and len(parts) > alt_idx and parts[alt_idx]:
+                            alt = round(float(parts[alt_idx]), 2)
+
+                        spd = 0.0
+                        if spd_idx is not None and len(parts) > spd_idx and parts[spd_idx]:
+                            try:
+                                spd = float(parts[spd_idx])
+                            except ValueError:
+                                spd = 0.0
+
+                        bat = None
+                        if bat_idx is not None and len(parts) > bat_idx and parts[bat_idx]:
+                            try:
+                                bat = float(parts[bat_idx])
+                            except ValueError:
+                                bat = None
+
+                        ts_str = datetime.now(timezone.utc).isoformat()
+                        if time_idx is not None and len(parts) > time_idx and parts[time_idx]:
+                            t_val = parts[time_idx]
+                            d_val = parts[date_idx] if date_idx is not None and len(parts) > date_idx else ""
+                            ts_str = f"{d_val} {t_val}".strip() if d_val else t_val
 
                         points.append(TelemetryPoint(
-                            timestamp_utc=ts,
-                            latitude=lat,
-                            longitude=lon,
+                            timestamp_utc=ts_str,
+                            latitude=round(lat, 7),
+                            longitude=round(lon, 7),
                             altitude_m=alt,
-                            ground_speed_mps=spd,
+                            ground_speed_mps=round(spd, 2),
                             battery_pct=bat,
-                            source_channel="DJI_TXT_RECORD"
+                            source_channel="DJI_AIRDATA_RECORD"
                         ))
                     except ValueError:
                         continue

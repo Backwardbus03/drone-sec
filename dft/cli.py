@@ -46,6 +46,12 @@ def main():
     # Command: plugins
     subparsers.add_parser("plugins", help="List registered drone platform plugins")
 
+    # Command: benchmark / benchmarks
+    bench_parser = subparsers.add_parser("benchmark", aliases=["benchmarks"], help="Inspect reference forensic benchmark datasets and run validation suite")
+    bench_parser.add_argument("--run", action="store_true", help="Execute automated benchmark validation suite")
+    bench_parser.add_argument("--dataset", help="Specific benchmark ID to evaluate (e.g. ardupilot-flight-suite)")
+    bench_parser.add_argument("--fetch-real-data", action="store_true", help="Download genuine real flight records, ULogs, and aerial photos from public research repositories into benchmarks/data/")
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -147,6 +153,78 @@ def main():
         for pl in mgr.list_plugins():
             print(f"- {pl['display_name']} [ID: {pl['platform_id']}]")
             print(f"  Extensions: {', '.join(pl['supported_extensions'])}")
+
+    elif args.command in ("benchmark", "benchmarks"):
+        from dft.benchmarks.registry import BENCHMARK_REGISTRY, list_benchmarks, get_benchmark_by_id
+        from dft.benchmarks.evaluator import BenchmarkEvaluator
+
+        if getattr(args, "fetch_real_data", False):
+            from dft.benchmarks.downloader import fetch_real_benchmark_data
+            print("[*] Fetching genuine benchmark files from open-access UAV forensic repositories...")
+            dl_res = fetch_real_benchmark_data()
+            print(f"[+] Download Status: {dl_res['status']}")
+            print(f"    Saved to: {dl_res['destination_directory']}")
+            for f in dl_res['files']:
+                cached_tag = "(cached)" if f.get('cached') else "(downloaded)"
+                print(f"    - {f['file_name']} [{f['size_bytes']} bytes] {cached_tag}")
+                print(f"      {f['description']}")
+            if dl_res['errors']:
+                print(f"[!] Errors encountered: {len(dl_res['errors'])}")
+                for err in dl_res['errors']:
+                    print(f"    - {err['key']}: {err['error']}")
+            sys.exit(0)
+
+        if args.run:
+            evaluator = BenchmarkEvaluator()
+            if args.dataset:
+                b_res = evaluator.run_benchmark(args.dataset)
+                if not b_res:
+                    print(f"[!] Benchmark dataset '{args.dataset}' not found. Available:")
+                    for b in list_benchmarks():
+                        print(f"    - {b.id} ({b.short_title})")
+                    sys.exit(1)
+                print(f"=== BENCHMARK EVALUATION: {b_res.short_title.upper()} ===")
+                print(f"Status: {'PASSED [100%]' if b_res.passed else 'FAILED'}")
+                print(f"Score : {b_res.score}% ({b_res.checks_passed}/{b_res.checks_run} checks passed)")
+                for chk in b_res.details:
+                    symbol = "[+]" if chk["passed"] else "[X]"
+                    print(f"  {symbol} {chk['check']}")
+                    print(f"      {chk['detail']}")
+            else:
+                suite_res = evaluator.run_all()
+                print("================================================================================")
+                print("           DRONE FORENSIC TOOLKIT — BENCHMARK EVALUATION SUITE                  ")
+                print("   ISO/IEC 27037:2012 (Preservation) & ISO/IEC 27042:2015 (Analysis/Reporting)  ")
+                print("================================================================================")
+                print(f"Overall Result : {'ALL SUITES PASSED' if suite_res.all_passed else 'SOME SUITES FAILED'}")
+                print(f"Suites Passed  : {suite_res.benchmarks_passed} / {suite_res.total_benchmarks}")
+                print(f"Composite Score: {suite_res.overall_score}%\n")
+
+                for b_res in suite_res.results:
+                    status_str = "PASS" if b_res.passed else "FAIL"
+                    print(f"[{status_str}] {b_res.short_title} ({b_res.score}%)")
+                    for chk in b_res.details:
+                        s = "  +" if chk["passed"] else "  X"
+                        print(f"  {s} {chk['check']}")
+
+                print("================================================================================")
+                print(f"[+] {suite_res.summary}")
+        else:
+            print("================================================================================")
+            print("        REFERENCE FORENSIC BENCHMARK DATASETS (OBJECTIVE 1 EVALUATION)          ")
+            print("================================================================================")
+            for b in list_benchmarks():
+                print(f"\n* [{b.id}] {b.name}")
+                print(f"  Short Title: {b.short_title}")
+                print(f"  Category   : {b.category.value}")
+                print(f"  Citation   : {b.citation}")
+                print(f"  Reference  : {b.reference_url}")
+                print(f"  Platforms  : {', '.join(b.target_platforms)}")
+                print(f"  Evidence   : {', '.join(b.evidence_types[:3])}...")
+                print(f"  Layers     : {', '.join(b.toolkit_layers)}")
+                print(f"  Evaluation : {b.evaluation_criteria_mapping}")
+            print("\nRun validation with: python dft/cli.py benchmark --run")
+            print("Run specific suite:  python dft/cli.py benchmark --run --dataset <id>")
 
     else:
         parser.print_help()

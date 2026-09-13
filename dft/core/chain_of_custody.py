@@ -28,7 +28,8 @@ class ChainOfCustodyManager:
         return conn
 
     def _init_db(self):
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS audit_trail (
                     entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +44,8 @@ class ChainOfCustodyManager:
                 )
             """)
             conn.commit()
+        finally:
+            conn.close()
 
     def _calculate_signature(self, entry_data: str) -> str:
         return hmac.new(self.secret_key, entry_data.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -63,7 +66,8 @@ class ChainOfCustodyManager:
         Appends an immutable, cryptographically signed record to the Chain of Custody.
         """
         ts = datetime.now(timezone.utc).isoformat()
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.cursor()
             # Fetch the previous entry's signature for chaining
             cursor.execute("SELECT signature FROM audit_trail WHERE case_id = ? ORDER BY entry_id DESC LIMIT 1", (case_id,))
@@ -92,10 +96,13 @@ class ChainOfCustodyManager:
                 previous_hash=prev_hash,
                 signature=signature
             )
+        finally:
+            conn.close()
 
     def get_entries(self, case_id: str) -> List[AuditLogEntry]:
         """Returns all audit entries for a case in chronological order."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM audit_trail WHERE case_id = ? ORDER BY entry_id ASC", (case_id,))
             rows = cursor.fetchall()
@@ -113,6 +120,8 @@ class ChainOfCustodyManager:
                 )
                 for r in rows
             ]
+        finally:
+            conn.close()
 
     def verify_chain(self, case_id: str) -> Tuple[bool, Optional[str]]:
         """

@@ -453,28 +453,51 @@ flowchart TD
 
 ## Validation Methodology
 
+### Reference Forensic Benchmark Datasets (Evaluation Framework)
+To satisfy the Techfest requirement of *demonstrating repeatable and verifiable forensic acquisition processes under controlled test conditions*, the toolkit is benchmarked against six established reference datasets:
+
+| Benchmark Suite | Academic Citation / Source | Target UAV Platforms | Forensic Focus | Primary Validated Layer |
+|---|---|---|---|---|
+| **VTO Labs Drone Program** | NIH PMC10293979 / NIST CFReDS | DJI (Phantom/Mavic/Inspire), Yuneec, Parrot | Bit-stream raw disk images (`.dd`, `.E01`), NAND flash dumps, encrypted `.DAT` storage, carved media fragments | **Layer 1** (Acquisition) & **Layer 2** (Preservation) |
+| **DJI Phantom III (DROP)** | Clark et al., *Digital Investigation* (2017) / Springer | DJI Phantom 3 Standard, Advanced, Pro | Flight controller proprietary `.DAT` binary records, internal micro-USB data dumps, SD card FAT32/exFAT, mobile app cache | **Layer 3** (DJI Parser) & **Layer 4** (Timeline Engine) |
+| **AirData UAV Flight Logs** | DroneNLP / AirData UAV (GitHub DroneNLP/dataset) | DJI Mavic 2/3, Phantom series, Autel Evo, Skydio, Parrot | CSV/JSON multi-drone telemetry feeds, GPS coordinate streams, battery & motor metrics, 499 in-flight warning messages | **Layer 4** (Flight Path & Geofence Engine) |
+| **DroSev / DroNER Dataset** | Mendeley Data / PubMed Central PMC12877856 | Multi-vendor industrial UAVs | Curated flight logs derived from VTO Labs and AirData with 4-tier ground-truth severities (Info, Warning, Error, Critical) and NER entity tags | **Layer 4** (Anomaly Engine) & **Layer 5** (Reporting) |
+| **ArduPilot Autonomous Suite** | ArduPilot.org Flight Archive / IEEE UAV Studies | ArduCopter, ArduPlane, ArduVTOL, Pixhawk | DataFlash binary logs (`.bin`, `.log`), MAVLink telemetry (`.tlog`), parameter dumps (`.param`), EKF3 sensor fusion logs | **Layer 3** (ArduPilot Parser) & **Layer 4** (Waypoint Trajectory) |
+| **PX4 Autopilot / CMU ALFA** | Dronecode logs.px4.io & CMU ALFA Dataset | PX4 Autopilot, Pixhawk FMUv4/v5/v6 | Native binary ULog (`.ulg`), CSV topic logs, documented in-flight hardware faults: aileron jam, motor thrust loss, failsafes | **Layer 3** (PX4 Parser) & **Layer 4** (Actuator Faults) |
+
+### Automated Benchmark Evaluator
+The toolkit includes a built-in automated benchmark evaluation subsystem executable via CLI and API:
+```bash
+# Run full benchmark evaluation across all 6 reference datasets
+python dft/cli.py benchmark --run
+
+# Run specific benchmark suite (e.g. ArduPilot or PX4)
+python dft/cli.py benchmark --run --dataset ardupilot-flight-suite
+python dft/cli.py benchmark --run --dataset px4-alfa-anomaly-suite
+```
+
 ### Unit-Level Validation
 - Each parser plugin tested against known-good log files from each supported platform
-- Hash engine verified against NIST test vectors
+- Hash engine verified against NIST CAVP test vectors for SHA-256 and SHA-3-256
 - File carving validated against planted test files on formatted media
 
 ### Integration Testing
 - End-to-end workflow: acquisition → parsing → analysis → report for each supported drone
-- Chain-of-custody verification across full pipeline
-- Cross-source correlation accuracy tests
+- Chain-of-custody verification across full pipeline (HMAC-SHA256 signature chain)
+- Cross-source correlation accuracy tests (flight log GPS vs media EXIF)
 
 ### Controlled Test Scenarios
-| Scenario | Validation Goal |
-|---|---|
-| Normal flight with DJI Mavic | Full pipeline: logs, media, GPS, timeline, report |
-| ArduPilot drone with waypoint mission | MAVLink parsing, waypoint extraction, flight path |
-| SD card with deleted photos | File carving, metadata recovery |
-| Tampered/modified log file | Anomaly detection, hash mismatch alert |
-| Multi-source onboard correlation | Flight log + media metadata + telemetry → unified timeline |
-| Encrypted DJI storage | Limitations documentation, partial extraction |
-| Geofence violation detection | Define zones → import flight → verify breach flagging accuracy |
-| PX4 ULog parsing | Full pipeline with PX4 `.ulg` logs |
-| Betaflight/iNav blackbox | Blackbox `.bbl` decode, flight path, timeline |
+| Scenario | Benchmark Dataset / Method | Validation Goal |
+|---|---|---|
+| Normal flight with DJI Mavic | DROP & VTO Labs | Full pipeline: logs, media, GPS, timeline, report |
+| ArduPilot drone with waypoint mission | ArduPilot DataFlash Benchmark | MAVLink parsing, waypoint extraction, flight path |
+| SD card with deleted photos | VTO Labs Disk Images | File carving, metadata recovery |
+| Tampered/modified log file | DroSev / DroNER Dataset | Anomaly detection, hash mismatch alert |
+| Multi-source onboard correlation | DROP Phantom III Dataset | Flight log + media metadata + telemetry → unified timeline |
+| Encrypted DJI storage | VTO Labs Drone Images | Limitations documentation, partial extraction |
+| Geofence violation detection | AirData UAV Fleet Stream | Define zones → import flight → verify breach flagging accuracy |
+| PX4 ULog parsing & Actuator Faults | PX4 ULog & CMU ALFA Dataset | Full pipeline with PX4 `.ulg` logs and hardware failure correlation |
+| Betaflight/iNav blackbox | Blackbox Test Suite | Blackbox `.bbl` decode, flight path, timeline |
 
 ### Standards Compliance (ISO-Based)
 - **ISO/IEC 27037:2012** — Guidelines for identification, collection, acquisition and preservation of digital evidence *(primary framework)*

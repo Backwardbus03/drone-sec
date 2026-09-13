@@ -31,8 +31,10 @@ ENV/
 env.bak/
 venv.bak/
 
-# Unit test / coverage / pytest
+# Unit test / coverage / pytest / linters
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .tox/
 .nox/
 .coverage
@@ -44,8 +46,14 @@ htmlcov/
 *.cover
 *.py,cover
 
+# Downloaded Benchmark Datasets (fetchable via: python dft/cli.py benchmark --fetch-real-data)
+benchmarks/data/*
+!benchmarks/data/.gitkeep
+
 # Forensic Cases Vault & Local Databases
 forensic_cases_vault/
+cases/
+case_data/
 *.sqlite
 *.sqlite3
 *.db
@@ -53,6 +61,13 @@ forensic_cases_vault/
 # Generated Forensic Reports & Exports
 examination_report.html
 final_court_report.html
+*.dfxml
+*_dfxml.xml
+*.kml
+*.kmz
+*_flight.kml
+*.geojson
+*.pdf
 
 # Logs
 *.log

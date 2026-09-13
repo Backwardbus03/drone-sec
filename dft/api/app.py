@@ -532,3 +532,156 @@ def get_dfxml_report(case_id: str):
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{case_id}_dfxml.xml"'}
     )
+
+
+# --- BENCHMARK DATASETS & VERIFICATION API ---
+
+class RunBenchmarkRequest(BaseModel):
+    benchmark_id: Optional[str] = None
+
+
+@app.get("/api/benchmarks")
+def api_list_benchmarks():
+    """Lists all 6 registered forensic benchmark reference datasets."""
+    from dft.benchmarks.registry import list_benchmarks
+    benchmarks = list_benchmarks()
+    return [
+        {
+            "id": b.id,
+            "name": b.name,
+            "short_title": b.short_title,
+            "category": b.category.value,
+            "citation": b.citation,
+            "reference_url": b.reference_url,
+            "source_organization": b.source_organization,
+            "target_platforms": b.target_platforms,
+            "evidence_types": b.evidence_types,
+            "toolkit_layers": b.toolkit_layers,
+            "evaluation_criteria_mapping": b.evaluation_criteria_mapping,
+            "description": b.description,
+            "forensic_challenges": b.forensic_challenges,
+            "metrics": [
+                {
+                    "metric_id": m.metric_id,
+                    "name": m.name,
+                    "target_threshold": m.target_threshold,
+                    "unit": m.unit,
+                    "description": m.description
+                }
+                for m in b.metrics
+            ],
+            "sample_cases": [
+                {
+                    "case_id": sc.case_id,
+                    "name": sc.name,
+                    "platform": sc.platform,
+                    "evidence_type": sc.evidence_type,
+                    "description": sc.description,
+                    "ground_truth_summary": sc.ground_truth_summary
+                }
+                for sc in b.sample_cases
+            ]
+        }
+        for b in benchmarks
+    ]
+
+
+@app.get("/api/benchmarks/{benchmark_id}")
+def api_get_benchmark(benchmark_id: str):
+    """Retrieves detailed specification for a single forensic benchmark dataset."""
+    from dft.benchmarks.registry import get_benchmark_by_id
+    b = get_benchmark_by_id(benchmark_id)
+    if not b:
+        raise HTTPException(status_code=404, detail=f"Benchmark dataset '{benchmark_id}' not found.")
+    return {
+        "id": b.id,
+        "name": b.name,
+        "short_title": b.short_title,
+        "category": b.category.value,
+        "citation": b.citation,
+        "reference_url": b.reference_url,
+        "source_organization": b.source_organization,
+        "target_platforms": b.target_platforms,
+        "evidence_types": b.evidence_types,
+        "toolkit_layers": b.toolkit_layers,
+        "evaluation_criteria_mapping": b.evaluation_criteria_mapping,
+        "description": b.description,
+        "forensic_challenges": b.forensic_challenges,
+        "metrics": [
+            {
+                "metric_id": m.metric_id,
+                "name": m.name,
+                "target_threshold": m.target_threshold,
+                "unit": m.unit,
+                "description": m.description
+            }
+            for m in b.metrics
+        ],
+        "sample_cases": [
+            {
+                "case_id": sc.case_id,
+                "name": sc.name,
+                "platform": sc.platform,
+                "evidence_type": sc.evidence_type,
+                "description": sc.description,
+                "ground_truth_summary": sc.ground_truth_summary
+            }
+            for sc in b.sample_cases
+        ]
+    }
+
+
+@app.post("/api/benchmarks/run")
+def api_run_benchmark(req: Optional[RunBenchmarkRequest] = None):
+    """Executes automated benchmark evaluation suite and returns scored results."""
+    from dft.benchmarks.evaluator import BenchmarkEvaluator
+    evaluator = BenchmarkEvaluator()
+
+    if req and req.benchmark_id:
+        single_res = evaluator.run_benchmark(req.benchmark_id)
+        if not single_res:
+            raise HTTPException(status_code=404, detail=f"Benchmark dataset '{req.benchmark_id}' not found.")
+        return {
+            "mode": "SINGLE_BENCHMARK",
+            "benchmark_id": single_res.benchmark_id,
+            "benchmark_name": single_res.benchmark_name,
+            "short_title": single_res.short_title,
+            "passed": single_res.passed,
+            "score": single_res.score,
+            "checks_run": single_res.checks_run,
+            "checks_passed": single_res.checks_passed,
+            "details": single_res.details
+        }
+    else:
+        suite_res = evaluator.run_all()
+        return {
+            "mode": "FULL_SUITE",
+            "total_benchmarks": suite_res.total_benchmarks,
+            "benchmarks_passed": suite_res.benchmarks_passed,
+            "overall_score": suite_res.overall_score,
+            "all_passed": suite_res.all_passed,
+            "summary": suite_res.summary,
+            "results": [
+                {
+                    "benchmark_id": r.benchmark_id,
+                    "benchmark_name": r.benchmark_name,
+                    "short_title": r.short_title,
+                    "category": r.category,
+                    "passed": r.passed,
+                    "score": r.score,
+                    "checks_run": r.checks_run,
+                    "checks_passed": r.checks_passed,
+                    "details": r.details
+                }
+                for r in suite_res.results
+            ]
+        }
+
+
+@app.post("/api/benchmarks/fetch-real-data")
+def api_fetch_real_benchmark_data():
+    """Downloads or verifies real reference benchmark datasets (VTO Labs, AirData UAV, PX4 ULog, Aerial Drone Photo)."""
+    from dft.benchmarks.downloader import fetch_real_benchmark_data
+    res = fetch_real_benchmark_data()
+    return res
+
