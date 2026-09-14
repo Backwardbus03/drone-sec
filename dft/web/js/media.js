@@ -94,39 +94,40 @@ async function loadMediaTable() {
         : `/api/cases/${activeCaseId}/media/${m.item_id}/thumbnail`;
 
       const typeBadgeClass = m.media_type === 'VIDEO'
-        ? 'bg-purple-950 text-purple-300 border-purple-800'
-        : 'bg-blue-950 text-blue-300 border-blue-800';
+        ? 'bg-purple-50 text-purple-800 border-purple-200'
+        : 'bg-sky-50 text-sky-800 border-sky-200';
 
       const syncBadge = isSynced
-        ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">✓ SYNCHRONIZED</span>`
-        : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">NO OVERLAP</span>`;
+        ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold">✓ SYNCHRONIZED</span>`
+        : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 border border-slate-200">NO OVERLAP</span>`;
 
       const coordsText = (m.latitude !== null && m.latitude !== undefined && m.longitude !== null && m.longitude !== undefined)
-        ? `<div class="font-mono text-[11px] text-sky-400">${m.latitude.toFixed(5)}, ${m.longitude.toFixed(5)}</div>
-           <div class="text-[10px] text-slate-400">Alt: ${m.altitude_m !== null && m.altitude_m !== undefined ? m.altitude_m.toFixed(1) : 0}m AGL</div>`
-        : `<span class="text-slate-500 text-xs">Outside telemetry</span>`;
+        ? `<div class="font-mono text-[11px] text-sky-700 font-semibold">${m.latitude.toFixed(5)}, ${m.longitude.toFixed(5)}</div>
+           <div class="text-[10px] text-slate-500">Alt: ${m.altitude_m !== null && m.altitude_m !== undefined ? m.altitude_m.toFixed(1) : 0}m AGL</div>`
+        : `<span class="text-slate-400 text-xs">Outside telemetry</span>`;
 
       const deltaText = (m.sync_delta_seconds !== null && m.sync_delta_seconds !== undefined)
-        ? `<span class="text-emerald-400 font-mono text-[11px]">Δ ${Math.abs(m.sync_delta_seconds).toFixed(1)}s</span>`
-        : `<span class="text-slate-500">--</span>`;
+        ? `<span class="text-emerald-700 font-mono text-[11px] font-semibold">Δ ${Math.abs(m.sync_delta_seconds).toFixed(1)}s</span>`
+        : `<span class="text-slate-400">--</span>`;
 
+      tr.className = 'hover:bg-sky-50/50 transition border-b border-slate-100';
       tr.innerHTML = `
         <td class="p-2.5">
-          <div class="w-14 h-10 bg-slate-800 rounded overflow-hidden border border-slate-700 flex items-center justify-center cursor-pointer hover:opacity-80 transition" onclick="openMediaLightbox('${m.item_id}')">
+          <div class="w-14 h-10 bg-slate-100 rounded overflow-hidden border border-slate-200 flex items-center justify-center cursor-pointer hover:opacity-80 transition shadow-sm" onclick="openMediaLightbox('${m.item_id}')">
             ${m.thumbnail_base64 || m.media_type === 'IMAGE' || m.media_type === 'VIDEO' ? `<img src="${thumbSrc}" alt="Thumbnail" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" /><span class="hidden text-xs">${m.media_type === 'VIDEO' ? '🎥' : '📷'}</span>` : `<span class="text-xs">${m.media_type === 'VIDEO' ? '🎥' : '📷'}</span>`}
           </div>
         </td>
         <td class="p-2.5">
-          <div class="font-medium text-white text-xs">${m.filename}</div>
-          <div class="text-[10px] text-slate-400 font-mono">${(m.file_size_bytes / (1024 * 1024)).toFixed(2)} MB${durText}</div>
+          <div class="font-bold text-slate-900 text-xs">${m.filename}</div>
+          <div class="text-[10px] text-slate-500 font-mono">${(m.file_size_bytes / (1024 * 1024)).toFixed(2)} MB${durText}</div>
         </td>
         <td class="p-2.5 whitespace-nowrap">
           <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] border font-bold ${typeBadgeClass}">
             ${m.media_type === 'VIDEO' ? '🎥 VIDEO' : '📷 PHOTO'}
           </span>
         </td>
-        <td class="p-2.5 whitespace-nowrap font-mono text-slate-300 text-xs">
-          ${m.capture_timestamp_utc ? m.capture_timestamp_utc.replace('T', ' ').substring(0, 19) + ' UTC' : '<span class="text-slate-500">No EXIF time</span>'}
+        <td class="p-2.5 whitespace-nowrap font-mono text-slate-600 text-xs">
+          ${m.capture_timestamp_utc ? m.capture_timestamp_utc.replace('T', ' ').substring(0, 19) + ' UTC' : '<span class="text-slate-400">No EXIF time</span>'}
         </td>
         <td class="p-2.5 whitespace-nowrap">
           ${coordsText}
@@ -136,7 +137,7 @@ async function loadMediaTable() {
           <div class="text-[10px] mt-0.5">${deltaText}</div>
         </td>
         <td class="p-2.5 text-right whitespace-nowrap">
-          <button onclick="openMediaLightbox('${m.item_id}')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-[11px] font-semibold px-2.5 py-1 rounded transition">
+          <button onclick="openMediaLightbox('${m.item_id}')" class="bg-white hover:bg-slate-100 text-sky-700 border border-slate-200 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition shadow-sm">
             Inspect Frame
           </button>
         </td>

@@ -106,25 +106,26 @@ async function loadGcsData() {
           const tr = document.createElement('tr');
           const wpIdx = wp.index !== undefined ? wp.index : wp.sequence;
           const wpCmd = wp.command || wp.action || 'WAYPOINT';
-          let statusBadge = '<span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">PLANNED</span>';
+          let statusBadge = '<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-mono">PLANNED</span>';
           if (reachedCount !== null) {
             if (wpIdx <= reachedCount) {
-              statusBadge = '<span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold text-[10px] font-mono">✓ REACHED</span>';
+              statusBadge = '<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-300 font-bold text-[10px] font-mono">✓ REACHED</span>';
             } else {
-              statusBadge = '<span class="px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-bold text-[10px] font-mono">DEVIATED</span>';
+              statusBadge = '<span class="px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-300 font-bold text-[10px] font-mono">DEVIATED</span>';
             }
           }
 
           const spdText = (wp.speed_mps !== null && wp.speed_mps !== undefined) ? `${wp.speed_mps.toFixed(1)} m/s` : '--';
           const holdText = wp.param1 ? `${wp.param1}s` : (wp.hold_time_sec ? `${wp.hold_time_sec}s` : '0s');
 
+          tr.className = 'hover:bg-sky-50/50 transition border-b border-slate-100';
           tr.innerHTML = `
-            <td class="p-2.5 font-mono text-cyan-400 font-bold text-center">#${wpIdx}</td>
-            <td class="p-2.5 font-medium text-white">${wpCmd}</td>
-            <td class="p-2.5 font-mono text-slate-300">${wp.latitude.toFixed(6)}, ${wp.longitude.toFixed(6)}</td>
-            <td class="p-2.5 font-mono text-slate-200">${wp.altitude_m.toFixed(1)} m</td>
-            <td class="p-2.5 font-mono text-slate-300">${spdText}</td>
-            <td class="p-2.5 font-mono text-slate-400">${holdText}</td>
+            <td class="p-2.5 font-mono text-sky-700 font-bold text-center">#${wpIdx}</td>
+            <td class="p-2.5 font-bold text-slate-900">${wpCmd}</td>
+            <td class="p-2.5 font-mono text-slate-700 text-xs">${wp.latitude.toFixed(6)}, ${wp.longitude.toFixed(6)}</td>
+            <td class="p-2.5 font-mono text-slate-700 text-xs">${wp.altitude_m.toFixed(1)} m</td>
+            <td class="p-2.5 font-mono text-slate-600 text-xs">${spdText}</td>
+            <td class="p-2.5 font-mono text-slate-500 text-xs">${holdText}</td>
             <td class="p-2.5">${statusBadge}</td>
           `;
           tbody.appendChild(tr);

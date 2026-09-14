@@ -40,17 +40,17 @@ function renderMobileCatalog(catalog) {
   if (!container) return;
 
   container.innerHTML = catalog.map(app => `
-    <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 p-3.5 rounded-xl transition flex flex-col justify-between">
+    <div class="glass-card bg-white/85 hover:bg-white border border-slate-200/90 hover:border-sky-400 p-3.5 rounded-xl transition-all duration-200 shadow-sm flex flex-col justify-between">
       <div>
         <div class="flex items-center justify-between mb-1.5">
-          <h5 class="text-xs font-bold text-white">${escapeHtml(app.app_name)}</h5>
-          <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-950 text-sky-300 border border-sky-800">${escapeHtml(app.platform)}</span>
+          <h5 class="text-xs font-bold text-slate-900">${escapeHtml(app.app_name)}</h5>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 font-mono">${escapeHtml(app.platform)}</span>
         </div>
-        <p class="text-[11px] font-mono text-slate-400 mb-2">${escapeHtml(app.package_id || 'mobile-pkg')}</p>
-        <p class="text-[11px] text-slate-400 mb-2 line-clamp-2">${escapeHtml((app.supported_models || []).join(', '))}</p>
+        <p class="text-[11px] font-mono text-sky-700 font-semibold mb-1.5">${escapeHtml(app.package_id || 'mobile-pkg')}</p>
+        <p class="text-[11px] text-slate-600 mb-2 line-clamp-2">${escapeHtml((app.supported_models || []).join(', '))}</p>
       </div>
-      <div class="border-t border-slate-800/80 pt-2 text-[10px] text-slate-500">
-        Key Files: <code class="text-sky-400">${escapeHtml((app.key_artifacts || []).slice(0, 2).join(', '))}</code>
+      <div class="border-t border-slate-200/80 pt-2 text-[10px] text-slate-500">
+        Key Files: <code class="text-sky-700 font-semibold font-mono">${escapeHtml((app.key_artifacts || []).slice(0, 2).join(', '))}</code>
       </div>
     </div>
   `).join('');
@@ -210,26 +210,28 @@ function renderMobileArtifacts(artifacts, wirelessSessions) {
     const recentFiles = wirelessSessions.flatMap(s => s.files_acquired || []).slice(0, 6);
 
     html += `
-      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+      <div class="glass-panel bg-white/90 border border-slate-200/90 p-4 rounded-xl space-y-3 shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-200 pb-3">
           <div class="flex items-center space-x-3">
-            <span class="text-2xl">📲</span>
+            <div class="w-10 h-10 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-xl shadow-sm">
+              📲
+            </div>
             <div>
-              <h4 class="text-sm font-bold text-white">Direct Mobile Wireless Evidence Ingestion</h4>
-              <p class="text-[11px] text-slate-400">Received wirelessly from suspect mobile device over local Wi-Fi • Dual-hashed & Write-Blocked</p>
+              <h4 class="text-sm font-bold text-slate-900">Direct Mobile Wireless Evidence Ingestion</h4>
+              <p class="text-[11px] text-slate-500">Received wirelessly from suspect mobile device over local Wi-Fi • Dual-hashed & Write-Blocked</p>
             </div>
           </div>
-          <span class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center space-x-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="px-2.5 py-1 rounded text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 flex items-center space-x-1.5 shadow-sm">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>${wirelessSessions.length} Transfer Session${wirelessSessions.length === 1 ? '' : 's'} Logged</span>
           </span>
         </div>
         <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
           <div class="flex flex-wrap items-center gap-1.5">
-            <span class="text-slate-400">Wirelessly Received Files (<strong class="text-white">${totalFiles}</strong>):</span>
-            ${recentFiles.map(f => `<span class="bg-slate-950 text-sky-300 font-mono text-[11px] px-2 py-0.5 rounded border border-slate-800">📄 ${escapeHtml(f)}</span>`).join('')}
+            <span class="text-slate-600 font-medium">Wirelessly Received Files (<strong class="text-slate-900">${totalFiles}</strong>):</span>
+            ${recentFiles.map(f => `<span class="bg-slate-50 text-sky-800 font-mono text-[11px] font-semibold px-2 py-0.5 rounded border border-slate-200 shadow-sm">📄 ${escapeHtml(f)}</span>`).join('')}
           </div>
-          <button onclick="switchTab('evidenceTab')" class="text-sky-400 hover:text-sky-300 font-semibold text-xs flex items-center space-x-1 transition">
+          <button onclick="switchTab('evidenceTab')" class="text-sky-700 hover:text-sky-800 font-bold text-xs flex items-center space-x-1 transition">
             <span>Inspect In Evidence Vault</span> <span>→</span>
           </button>
         </div>
@@ -246,64 +248,66 @@ function renderMobileArtifacts(artifacts, wirelessSessions) {
       const ops = art.operator_locations || [];
 
       return `
-        <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div class="glass-panel bg-white/90 border border-slate-200/90 p-5 rounded-xl space-y-4 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-200 pb-3">
             <div class="flex items-center space-x-3">
-              <span class="text-2xl">📱</span>
+              <div class="w-10 h-10 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-xl shadow-sm">
+                📱
+              </div>
               <div>
-                <h4 class="text-base font-bold text-white">${escapeHtml(art.app_name)}</h4>
-                <p class="text-xs font-mono text-sky-400">${escapeHtml(art.package_id || 'Mobile App')} — Target Platform: <strong class="text-slate-200">${escapeHtml(art.target_platform)}</strong></p>
+                <h4 class="text-base font-bold text-slate-900">${escapeHtml(art.app_name)}</h4>
+                <p class="text-xs font-mono text-sky-700 font-semibold">${escapeHtml(art.package_id || 'Mobile App')} — Target Platform: <strong class="text-slate-800">${escapeHtml(art.target_platform)}</strong></p>
               </div>
             </div>
-            <span class="px-2.5 py-1 rounded text-xs font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800">Artifact ID: ${escapeHtml(art.app_id)}</span>
+            <span class="px-2.5 py-1 rounded text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm">Artifact ID: ${escapeHtml(art.app_id)}</span>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
             <!-- Column 1: Pilot Account -->
-            <div class="bg-slate-950/60 p-3.5 rounded-lg border border-slate-800/80 space-y-1.5">
-              <h5 class="text-slate-300 font-bold uppercase tracking-wider text-[10px] flex items-center space-x-1">
+            <div class="glass-card bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
+              <h5 class="text-slate-700 font-bold uppercase tracking-wider text-[10px] flex items-center space-x-1">
                 <span>👤</span> <span>Pilot Account & Identity</span>
               </h5>
-              <p class="text-slate-400"><strong>Pilot / Nick:</strong> <span class="text-white">${escapeHtml(pilot.pilot_name || pilot.callsign || '--')}</span></p>
-              <p class="text-slate-400"><strong>Registered Email:</strong> <span class="text-sky-300 font-mono">${escapeHtml(pilot.email || '--')}</span></p>
-              <p class="text-slate-400"><strong>User ID:</strong> <span class="text-slate-300 font-mono">${escapeHtml(pilot.user_id || '--')}</span></p>
-              ${pilot.phone ? `<p class="text-slate-400"><strong>Phone:</strong> <span class="text-slate-300">${escapeHtml(pilot.phone)}</span></p>` : ''}
+              <p class="text-slate-500"><strong>Pilot / Nick:</strong> <span class="text-slate-900 font-medium">${escapeHtml(pilot.pilot_name || pilot.callsign || '--')}</span></p>
+              <p class="text-slate-500"><strong>Registered Email:</strong> <span class="text-sky-700 font-mono font-medium">${escapeHtml(pilot.email || '--')}</span></p>
+              <p class="text-slate-500"><strong>User ID:</strong> <span class="text-slate-700 font-mono">${escapeHtml(pilot.user_id || '--')}</span></p>
+              ${pilot.phone ? `<p class="text-slate-500"><strong>Phone:</strong> <span class="text-slate-700">${escapeHtml(pilot.phone)}</span></p>` : ''}
             </div>
 
             <!-- Column 2: Paired Hardware -->
-            <div class="bg-slate-950/60 p-3.5 rounded-lg border border-slate-800/80 space-y-1.5">
-              <h5 class="text-slate-300 font-bold uppercase tracking-wider text-[10px] flex items-center space-x-1">
+            <div class="glass-card bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
+              <h5 class="text-slate-700 font-bold uppercase tracking-wider text-[10px] flex items-center space-x-1">
                 <span>🚁</span> <span>Hardware Binding & Serial #</span>
               </h5>
-              <p class="text-slate-400"><strong>Aircraft Serial:</strong> <span class="text-emerald-400 font-mono font-semibold">${escapeHtml(hw.aircraft_sn || '--')}</span></p>
-              <p class="text-slate-400"><strong>Remote Controller SN:</strong> <span class="text-slate-300 font-mono">${escapeHtml(hw.controller_sn || '--')}</span></p>
-              <p class="text-slate-400"><strong>Camera / Gimbal SN:</strong> <span class="text-slate-300 font-mono">${escapeHtml(hw.camera_sn || '--')}</span></p>
+              <p class="text-slate-500"><strong>Aircraft Serial:</strong> <span class="text-emerald-700 font-mono font-bold">${escapeHtml(hw.aircraft_sn || '--')}</span></p>
+              <p class="text-slate-500"><strong>Remote Controller SN:</strong> <span class="text-slate-700 font-mono font-medium">${escapeHtml(hw.controller_sn || '--')}</span></p>
+              <p class="text-slate-500"><strong>Camera / Gimbal SN:</strong> <span class="text-slate-700 font-mono font-medium">${escapeHtml(hw.camera_sn || '--')}</span></p>
             </div>
 
             <!-- Column 3: Operator Geolocation -->
-            <div class="bg-slate-950/60 p-3.5 rounded-lg border border-slate-800/80 space-y-1.5">
-              <h5 class="text-slate-300 font-bold uppercase tracking-wider text-[10px] flex items-center space-x-1">
+            <div class="glass-card bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
+              <h5 class="text-slate-700 font-bold uppercase tracking-wider text-[10px] flex items-center space-x-1">
                 <span>📍</span> <span>Smartphone Operator GPS</span>
               </h5>
               ${ops.length ? `
-                <p class="text-emerald-300 font-mono font-semibold">${ops[0].latitude.toFixed(6)}, ${ops[0].longitude.toFixed(6)}</p>
-                <p class="text-[11px] text-slate-400">${escapeHtml(ops[0].source || 'Phone GPS')}</p>
-                <button onclick="flyToOperatorLocation(${ops[0].latitude}, ${ops[0].longitude})" class="mt-1 bg-emerald-950 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 text-[11px] font-semibold px-2 py-1 rounded transition">
+                <p class="text-emerald-700 font-mono font-bold">${ops[0].latitude.toFixed(6)}, ${ops[0].longitude.toFixed(6)}</p>
+                <p class="text-[11px] text-slate-500">${escapeHtml(ops[0].source || 'Phone GPS')}</p>
+                <button onclick="flyToOperatorLocation(${ops[0].latitude}, ${ops[0].longitude})" class="mt-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-[11px] font-bold px-2.5 py-1 rounded-lg transition shadow-sm">
                   Show on Flight Map 🗺️
                 </button>
-              ` : '<p class="text-slate-500">No smartphone GPS fix recorded in this log.</p>'}
+              ` : '<p class="text-slate-400">No smartphone GPS fix recorded in this log.</p>'}
             </div>
           </div>
 
           <!-- Discovered Files & Configs -->
-          <div class="bg-slate-950/40 p-3 rounded-lg border border-slate-800/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="bg-slate-50/90 p-3 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div class="flex items-center space-x-4">
-              <span class="text-slate-400">Flight Records: <strong class="text-white">${(art.flight_logs || []).length}</strong></span>
-              <span class="text-slate-400">Waypoints / Missions: <strong class="text-white">${(art.mission_plans || []).length}</strong></span>
-              <span class="text-slate-400">Cached Media: <strong class="text-white">${(art.cached_media || []).length}</strong></span>
+              <span class="text-slate-600">Flight Records: <strong class="text-slate-900">${(art.flight_logs || []).length}</strong></span>
+              <span class="text-slate-600">Waypoints / Missions: <strong class="text-slate-900">${(art.mission_plans || []).length}</strong></span>
+              <span class="text-slate-600">Cached Media: <strong class="text-slate-900">${(art.cached_media || []).length}</strong></span>
             </div>
             ${Object.keys(configs).length ? `
-              <span class="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-mono text-[11px]">
+              <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-mono text-[11px] font-semibold">
                 Config Backup: ${escapeHtml(configs.callsign ? `Callsign: ${configs.callsign}` : Object.keys(configs)[0])}
               </span>
             ` : ''}
@@ -316,9 +320,9 @@ function renderMobileArtifacts(artifacts, wirelessSessions) {
   // If nothing was rendered at all
   if (!html) {
     html = `
-      <div class="text-center py-10 bg-slate-900 border border-slate-800 rounded-xl">
+      <div class="text-center py-10 glass-panel bg-white/80 border border-slate-200 rounded-xl">
         <span class="text-3xl block mb-2">📱</span>
-        <p class="text-sm font-semibold text-slate-300">No Mobile Companion Artifacts Detected</p>
+        <p class="text-sm font-semibold text-slate-800">No Mobile Companion Artifacts Detected</p>
         <p class="text-xs text-slate-500 mt-1">Ingest a smartphone backup (.zip, .tar), companion database, or upload files from suspect device via the Direct Mobile Ingestion Portal.</p>
       </div>
     `;
@@ -342,8 +346,8 @@ function renderWirelessSessions(sessions) {
 
   tbody.innerHTML = sessions.map(s => {
     const fileBadges = (s.files_acquired && s.files_acquired.length)
-      ? s.files_acquired.map(f => `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-800 text-sky-300 border border-slate-700 mr-1 mb-1">📄 ${escapeHtml(f)}</span>`).join('')
-      : '<span class="text-slate-500 italic">No files recorded</span>';
+      ? s.files_acquired.map(f => `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-sky-800 border border-slate-200 mr-1 mb-1">📄 ${escapeHtml(f)}</span>`).join('')
+      : '<span class="text-slate-400 italic">No files recorded</span>';
 
     const bytesFormatted = s.bytes_transferred >= 1048576
       ? (s.bytes_transferred / (1024 * 1024)).toFixed(2) + ' MB'
@@ -352,22 +356,22 @@ function renderWirelessSessions(sessions) {
         : (s.bytes_transferred || 0) + ' B';
 
     const protoBadge = s.protocol === 'LOCAL_HTTP_PORTAL'
-      ? '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800">📲 Mobile Web Portal</span>'
-      : `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-sky-950 text-sky-300 border border-sky-800">${escapeHtml(s.protocol)}</span>`;
+      ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">📲 Mobile Web Portal</span>'
+      : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">${escapeHtml(s.protocol)}</span>`;
 
     const statusBadge = s.status === 'COMPLETED'
-      ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">✓ COMPLETED</span>'
-      : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">${escapeHtml(s.status)}</span>`;
+      ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300">✓ COMPLETED</span>'
+      : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">${escapeHtml(s.status)}</span>`;
 
     return `
-      <tr class="hover:bg-slate-900/60 transition border-b border-slate-800/60">
-        <td class="px-4 py-3 font-mono text-sky-400 font-bold text-xs">${escapeHtml(s.session_id)}</td>
+      <tr class="hover:bg-sky-50/50 transition border-b border-slate-100">
+        <td class="px-4 py-3 font-mono text-sky-700 font-bold text-xs">${escapeHtml(s.session_id)}</td>
         <td class="px-4 py-3">${protoBadge}</td>
-        <td class="px-4 py-3 font-mono text-slate-300 text-xs">${escapeHtml(s.source_ip)}</td>
-        <td class="px-4 py-3 text-slate-300 text-xs">${escapeHtml(s.target_device)}</td>
+        <td class="px-4 py-3 font-mono text-slate-700 text-xs">${escapeHtml(s.source_ip)}</td>
+        <td class="px-4 py-3 text-slate-700 text-xs">${escapeHtml(s.target_device)}</td>
         <td class="px-4 py-3">
           <div class="flex flex-wrap items-center">${fileBadges}</div>
-          <div class="text-[10px] font-mono text-slate-400 mt-0.5">${bytesFormatted} total (${(s.files_acquired || []).length} file${(s.files_acquired || []).length === 1 ? '' : 's'})</div>
+          <div class="text-[10px] font-mono text-slate-500 mt-0.5">${bytesFormatted} total (${(s.files_acquired || []).length} file${(s.files_acquired || []).length === 1 ? '' : 's'})</div>
         </td>
         <td class="px-4 py-3">${statusBadge}</td>
       </tr>
@@ -388,7 +392,7 @@ async function triggerWirelessAcquisition() {
   const statusEl = document.getElementById('wirelessStatusIndicator');
 
   if (statusEl) {
-    statusEl.innerHTML = '<span class="text-amber-400 font-semibold animate-pulse">⏳ Executing Wireless Acquisition...</span>';
+    statusEl.innerHTML = '<span class="text-amber-700 font-semibold animate-pulse">⏳ Executing Wireless Acquisition...</span>';
   }
 
   try {
@@ -412,14 +416,14 @@ async function triggerWirelessAcquisition() {
 
     const session = await res.json();
     if (statusEl) {
-      statusEl.innerHTML = `<span class="text-emerald-400 font-semibold">✓ Acquired ${session.files_acquired.length} file(s) wirelessly (${session.session_id})</span>`;
+      statusEl.innerHTML = `<span class="text-emerald-700 font-semibold">✓ Acquired ${session.files_acquired.length} file(s) wirelessly (${session.session_id})</span>`;
     }
 
     await loadMobileData();
     if (typeof loadCaseStats === 'function') await loadCaseStats(activeCaseId);
   } catch (err) {
     if (statusEl) {
-      statusEl.innerHTML = `<span class="text-rose-400 font-semibold">✗ Error: ${escapeHtml(err.message)}</span>`;
+      statusEl.innerHTML = `<span class="text-rose-700 font-semibold">✗ Error: ${escapeHtml(err.message)}</span>`;
     }
   }
 }
@@ -432,7 +436,7 @@ async function uploadMobileEvidenceFile(file) {
   formData.append('actor', 'Wireless Mobile Browser');
 
   const statusEl = document.getElementById('wirelessStatusIndicator');
-  if (statusEl) statusEl.innerHTML = '<span class="text-sky-400 animate-pulse">📤 Uploading file wirelessly...</span>';
+  if (statusEl) statusEl.innerHTML = '<span class="text-sky-700 animate-pulse">📤 Uploading file wirelessly...</span>';
 
   try {
     const res = await fetch(`/api/cases/${activeCaseId}/wireless/upload-mobile`, {
@@ -447,13 +451,13 @@ async function uploadMobileEvidenceFile(file) {
 
     const result = await res.json();
     if (statusEl) {
-      statusEl.innerHTML = `<span class="text-emerald-400 font-semibold">✓ Received ${escapeHtml(result.file_name)} wirelessly. Dual hashed.</span>`;
+      statusEl.innerHTML = `<span class="text-emerald-700 font-semibold">✓ Received ${escapeHtml(result.file_name)} wirelessly. Dual hashed.</span>`;
     }
 
     await loadMobileData();
     if (typeof loadCaseStats === 'function') await loadCaseStats(activeCaseId);
   } catch (err) {
-    if (statusEl) statusEl.innerHTML = `<span class="text-rose-400 font-semibold">✗ Upload failed: ${escapeHtml(err.message)}</span>`;
+    if (statusEl) statusEl.innerHTML = `<span class="text-rose-700 font-semibold">✗ Upload failed: ${escapeHtml(err.message)}</span>`;
   }
 }
 
@@ -466,7 +470,7 @@ function flyToOperatorLocation(lat, lon) {
       map.flyTo([lat, lon], 17);
       L.popup()
         .setLatLng([lat, lon])
-        .setContent(`<div class="text-xs"><strong>📱 Operator Phone GPS</strong><br/>Lat: ${lat.toFixed(6)}<br/>Lon: ${lon.toFixed(6)}</div>`)
+        .setContent(`<div class="text-xs text-slate-800"><strong>📱 Operator Phone GPS</strong><br/>Lat: ${lat.toFixed(6)}<br/>Lon: ${lon.toFixed(6)}</div>`)
         .openOn(map);
     }
   }, 300);

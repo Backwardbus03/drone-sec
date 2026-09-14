@@ -261,27 +261,28 @@ function renderCatalogTable() {
     const isRed = z.zone_class === 'RED' || z.max_altitude_m === 0;
     const icon = catIcons[z.category] || '🛡️';
 
+    tr.className = 'hover:bg-sky-50/50 transition border-b border-slate-100';
     tr.innerHTML = `
-      <td class="p-2.5 font-mono text-sky-400 font-semibold text-[11px] whitespace-nowrap">${z.zone_id}</td>
+      <td class="p-2.5 font-mono text-sky-700 font-semibold text-[11px] whitespace-nowrap">${z.zone_id}</td>
       <td class="p-2.5">
-        <div class="font-medium text-white">${z.name}</div>
-        <div class="text-[10px] text-slate-400 truncate max-w-xs" title="${z.description || ''}">${z.description || ''}</div>
+        <div class="font-bold text-slate-900">${z.name}</div>
+        <div class="text-[10px] text-slate-500 truncate max-w-xs" title="${z.description || ''}">${z.description || ''}</div>
       </td>
       <td class="p-2.5 whitespace-nowrap">
-        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 font-medium">${icon} ${z.category}</span>
-        <div class="text-[10px] text-slate-400 mt-0.5">${z.authority || '--'}</div>
+        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-sky-800 border border-slate-200 font-medium">${icon} ${z.category}</span>
+        <div class="text-[10px] text-slate-500 mt-0.5">${z.authority || '--'}</div>
       </td>
-      <td class="p-2.5 text-slate-300 whitespace-nowrap text-[11px]">${z.city_region || '--'}</td>
+      <td class="p-2.5 text-slate-700 whitespace-nowrap text-[11px]">${z.city_region || '--'}</td>
       <td class="p-2.5 whitespace-nowrap">
-        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}">
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">
           ${isRed ? 'RED ZONE (0m)' : `YELLOW (${z.max_altitude_m}m)`}
         </span>
       </td>
-      <td class="p-2.5 text-slate-400 whitespace-nowrap text-[11px]">
+      <td class="p-2.5 text-slate-600 whitespace-nowrap text-[11px]">
         ${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} pts polygon`}
       </td>
       <td class="p-2.5 text-right whitespace-nowrap">
-        <button onclick="importPresetIntoCase('${z.zone_id}')" class="bg-sky-700 hover:bg-sky-600 text-white text-[11px] font-semibold px-2.5 py-1 rounded transition shadow">
+        <button onclick="importPresetIntoCase('${z.zone_id}')" class="bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg transition shadow-sm">
           + Add to Case
         </button>
       </td>
@@ -365,20 +366,21 @@ async function loadGeofenceTable() {
     const isRed = z.zone_class === 'RED' || z.is_preconfigured_nofly || z.max_altitude_m === 0;
     const icon = catIcons[z.category] || '🛡️';
 
+    tr.className = 'hover:bg-sky-50/50 transition border-b border-slate-100';
     tr.innerHTML = `
-      <td class="p-2.5 font-mono text-sky-400 font-bold">${z.zone_id}</td>
+      <td class="p-2.5 font-mono text-sky-700 font-bold">${z.zone_id}</td>
       <td class="p-2.5">
-        <div class="font-medium text-white">${z.name}</div>
-        <div class="text-[10px] text-slate-400">${z.description || ''}</div>
+        <div class="font-bold text-slate-900">${z.name}</div>
+        <div class="text-[10px] text-slate-500">${z.description || ''}</div>
       </td>
       <td class="p-2.5">
-        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 font-medium">${icon} ${z.category || 'CUSTOM'}</span>
-        <div class="text-[10px] text-slate-400 mt-0.5">${z.authority || (z.city_region || '--')}</div>
+        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-sky-800 border border-slate-200 font-medium">${icon} ${z.category || 'CUSTOM'}</span>
+        <div class="text-[10px] text-slate-500 mt-0.5">${z.authority || (z.city_region || '--')}</div>
       </td>
-      <td class="p-2.5 text-slate-300">${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} vertices polygon`}</td>
-      <td class="p-2.5 text-slate-300 font-mono">${z.max_altitude_m !== null ? z.max_altitude_m + 'm' : 'Unlimited'}</td>
+      <td class="p-2.5 text-slate-700">${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} vertices polygon`}</td>
+      <td class="p-2.5 text-slate-700 font-mono font-semibold">${z.max_altitude_m !== null ? z.max_altitude_m + 'm' : 'Unlimited'}</td>
       <td class="p-2.5">
-        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}">
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">
           ${isRed ? 'RED ZONE (0m)' : `YELLOW (${z.max_altitude_m}m)`}
         </span>
       </td>
@@ -429,18 +431,19 @@ async function loadViolationsTable() {
   }
   vios.forEach(v => {
     const tr = document.createElement('tr');
+    tr.className = 'hover:bg-rose-50/40 transition border-b border-rose-100 bg-rose-50/10';
     tr.innerHTML = `
-      <td class="p-2.5 font-mono text-red-400 font-bold">${v.violation_id}</td>
-      <td class="p-2.5 font-medium text-white">${v.zone_name}</td>
+      <td class="p-2.5 font-mono text-rose-700 font-bold">${v.violation_id}</td>
+      <td class="p-2.5 font-bold text-slate-900">${v.zone_name}</td>
       <td class="p-2.5 whitespace-nowrap">
-        <span class="px-2 py-0.5 rounded text-[10px] bg-red-950 text-red-300 font-semibold uppercase">${v.category || 'RESTRICTED'}</span>
-        <div class="text-[10px] text-slate-400 mt-0.5">${v.authority || '--'}</div>
+        <span class="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-semibold uppercase">${v.category || 'RESTRICTED'}</span>
+        <div class="text-[10px] text-slate-500 mt-0.5">${v.authority || '--'}</div>
       </td>
-      <td class="p-2.5 text-slate-400 font-mono whitespace-nowrap">${v.timestamp_utc}</td>
-      <td class="p-2.5 text-slate-300 font-mono whitespace-nowrap">${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)}</td>
-      <td class="p-2.5 text-amber-300 font-semibold font-mono whitespace-nowrap">${v.altitude_m.toFixed(1)} m</td>
-      <td class="p-2.5 text-red-300 font-medium">
-        <span class="px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 text-red-200 font-bold mr-1">${v.violation_type}</span>
+      <td class="p-2.5 text-slate-600 font-mono whitespace-nowrap">${v.timestamp_utc}</td>
+      <td class="p-2.5 text-slate-700 font-mono whitespace-nowrap">${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)}</td>
+      <td class="p-2.5 text-amber-700 font-bold font-mono whitespace-nowrap">${v.altitude_m.toFixed(1)} m</td>
+      <td class="p-2.5 text-slate-800 font-medium">
+        <span class="px-1.5 py-0.5 rounded text-[10px] bg-rose-100 text-rose-800 border border-rose-300 font-bold mr-1">${v.violation_type}</span>
         ${v.details}
       </td>
     `;

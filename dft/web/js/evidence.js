@@ -75,24 +75,25 @@ async function loadEvidenceTable() {
       const tr = document.createElement('tr');
       const cat = ev.evidence_category || 'LOGS';
 
-      let catBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">📋 Logs</span>';
+      let catBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">📋 Logs</span>';
       if (cat === 'VIDEO_IMAGES') {
-        catBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800">🎥 Video/Images</span>';
+        catBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">🎥 Video/Images</span>';
       } else if (cat === 'GCS') {
-        catBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800">🎮 GCS</span>';
+        catBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200">🎮 GCS</span>';
       }
 
+      tr.className = 'hover:bg-sky-50/50 transition border-b border-slate-100';
       tr.innerHTML = `
-        <td class="p-2.5 font-mono text-sky-400 font-bold">${ev.item_id}</td>
+        <td class="p-2.5 font-mono text-sky-700 font-bold">${ev.item_id}</td>
         <td class="p-2.5">${catBadge}</td>
-        <td class="p-2.5 font-medium text-white">${escapeHtml(ev.file_name)}</td>
-        <td class="p-2.5 text-slate-400">${(ev.file_size_bytes/1024).toFixed(1)} KB</td>
-        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-bold uppercase">${ev.drone_platform || 'UNKNOWN'}</span></td>
-        <td class="p-2.5 font-mono text-[11px] text-slate-300">
-          <div><span class="text-slate-500">SHA256:</span> ${ev.hashes && ev.hashes.sha256 ? ev.hashes.sha256.substring(0,20) : '--'}...</div>
-          <div><span class="text-slate-500">SHA3:</span> ${ev.hashes && ev.hashes.sha3_256 ? ev.hashes.sha3_256.substring(0,20) : '--'}...</div>
+        <td class="p-2.5 font-medium text-slate-900">${escapeHtml(ev.file_name)}</td>
+        <td class="p-2.5 text-slate-500 font-mono">${(ev.file_size_bytes/1024).toFixed(1)} KB</td>
+        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 border border-slate-200 font-bold uppercase">${ev.drone_platform || 'UNKNOWN'}</span></td>
+        <td class="p-2.5 font-mono text-[11px] text-slate-700">
+          <div><span class="text-slate-400">SHA256:</span> ${ev.hashes && ev.hashes.sha256 ? ev.hashes.sha256.substring(0,20) : '--'}...</div>
+          <div><span class="text-slate-400">SHA3:</span> ${ev.hashes && ev.hashes.sha3_256 ? ev.hashes.sha3_256.substring(0,20) : '--'}...</div>
         </td>
-        <td class="p-2.5 text-emerald-400 font-medium">✓ Verified</td>
+        <td class="p-2.5 text-emerald-700 font-bold">✓ Verified</td>
       `;
       tbody.appendChild(tr);
     });
