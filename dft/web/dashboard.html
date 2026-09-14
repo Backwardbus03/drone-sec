@@ -10,14 +10,35 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  #map { height: 500px; width: 100%; border-radius: 0.75rem; z-index: 10; }
+  #map, #geoPreviewMap, #gcsMap {
+    height: 500px;
+    width: 100%;
+    border-radius: 0.75rem;
+    position: relative;
+    z-index: 10;
+    isolation: isolate;
+  }
+  #gcsMap {
+    height: 480px;
+  }
+  .leaflet-container {
+    z-index: 10 !important;
+    position: relative !important;
+    isolation: isolate !important;
+  }
+  .leaflet-pane {
+    z-index: 1 !important;
+  }
+  .leaflet-top, .leaflet-bottom {
+    z-index: 20 !important;
+  }
   .hash-font { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
 
 <!-- Top Navigation -->
-<header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+<header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-[100] relative">
   <div class="flex items-center space-x-3">
     <div class="bg-sky-500 text-slate-950 p-2 rounded-lg font-black text-xl tracking-wider">DFT</div>
     <div>
@@ -70,6 +91,9 @@
       </button>
       <button onclick="switchTab('reportsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
         <span>📑</span> <span>Court Reports</span>
+      </button>
+      <button onclick="switchTab('gcsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+        <span>🎮</span> <span>GCS & Operator</span>
       </button>
     </nav>
 
@@ -402,6 +426,83 @@
           </table>
         </div>
       </div>
+
+      <!-- MEDIA EVIDENCE INGESTION (MP4, MOV & AERIAL PHOTOS) -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="text-sky-400 text-lg">📹</span>
+            <div>
+              <h3 class="text-sm font-bold text-white">Import UAV Media Evidence (MP4, MOV & Photos)</h3>
+              <p class="text-xs text-slate-400">Extract container metadata, frame thumbnails, and correlate capture timestamps with flight telemetry.</p>
+            </div>
+          </div>
+          <span id="mediaCountBadge" class="text-[11px] font-semibold px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800">
+            0 Media Items
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Select Media Files (Multi-file upload supported)</label>
+            <input id="mediaFilesInput" type="file" multiple accept=".mp4,.mov,.m4v,.avi,.mkv,.jpg,.jpeg,.png,.dng,.tiff,.tif,.bmp,.webp" class="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
+            <span class="text-[11px] text-slate-500 mt-1 block">Supported: MP4, QuickTime MOV, JPEG, PNG, TIFF, DNG (ISO/IEC 27037:2012 compliant)</span>
+          </div>
+          <div class="flex items-start md:items-end">
+            <button id="uploadMediaBtn" onclick="uploadMediaFiles()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2">
+              <span id="uploadMediaBtnSpinner" class="hidden">⏳</span>
+              <span>Ingest & Correlate Media</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- QUICK SAMPLE MEDIA TEST BUTTONS -->
+        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+          <span class="text-xs text-slate-400 font-medium">Quick Test with Built-in UAV Samples:</span>
+          <button onclick="loadSampleMedia('video')" class="bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-800 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1.5 shadow-sm">
+            <span>🎥</span>
+            <span>Sample Drone MP4 (In-Flight)</span>
+          </button>
+          <button onclick="loadSampleMedia('photo')" class="bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1.5 shadow-sm">
+            <span>📸</span>
+            <span>Sample Aerial Photo (In-Flight)</span>
+          </button>
+          <button onclick="loadSampleMedia('unrelated')" class="bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1.5">
+            <span>📷</span>
+            <span>Out-of-Flight Photo</span>
+          </button>
+        </div>
+
+        <div id="mediaUploadAlert" class="hidden p-3 rounded-lg text-xs"></div>
+      </div>
+
+      <!-- SYNCHRONIZED MEDIA EVIDENCE & EXTRACTED FRAMES -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+            <span>Synchronized Media Evidence & Extracted Frames</span>
+          </h3>
+          <span class="text-xs text-slate-400">Click thumbnail to inspect full frame and telemetry match</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+              <tr>
+                <th class="p-2.5">Item ID</th>
+                <th class="p-2.5">Frame Preview</th>
+                <th class="p-2.5">File & Type</th>
+                <th class="p-2.5">Capture Time (UTC)</th>
+                <th class="p-2.5">Telemetry Synchronization</th>
+                <th class="p-2.5">Dual Hashes (SHA-256)</th>
+                <th class="p-2.5">Action</th>
+              </tr>
+            </thead>
+            <tbody id="mediaTableBody" class="divide-y divide-slate-800">
+              <tr><td colspan="7" class="p-4 text-center text-slate-500">No media assets ingested yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- TAB 4: TIMELINE -->
@@ -527,6 +628,156 @@
       </div>
     </div>
 
+    <!-- TAB 8: GCS & OPERATOR FORENSICS -->
+    <div id="gcsTab" class="tab-pane hidden space-y-6">
+      <!-- 4 Stat Cards -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Detected GCS Platform</p>
+          <p id="gcsStatPlatform" class="text-xl font-bold text-sky-400 mt-1">None</p>
+          <p id="gcsStatFC" class="text-[11px] text-slate-500 mt-0.5">FC: --</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Operator Geolocation</p>
+          <p id="gcsStatOperator" class="text-sm font-bold text-emerald-400 mt-1 font-mono truncate">Not Identified</p>
+          <p id="gcsStatOpSource" class="text-[11px] text-slate-500 mt-0.5 truncate">Source: --</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Planned Waypoints</p>
+          <p id="gcsStatWaypoints" class="text-xl font-bold text-slate-100 mt-1">0</p>
+          <p id="gcsStatPlanDist" class="text-[11px] text-slate-500 mt-0.5">Planned Dist: 0 m</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <p class="text-xs text-slate-400 font-medium uppercase">Mission Adherence</p>
+          <p id="gcsStatAdherence" class="text-xl font-bold text-sky-400 mt-1">-- %</p>
+          <p id="gcsStatReached" class="text-[11px] text-slate-500 mt-0.5">0 / 0 reached</p>
+        </div>
+      </div>
+
+      <!-- Supported Ground Control Stations Info Banner -->
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div class="flex items-center space-x-3">
+          <span class="text-2xl">🛰️</span>
+          <div>
+            <h4 class="text-sm font-bold text-white">Cross-Platform Ground Control Station Forensic Engine</h4>
+            <p class="text-xs text-slate-400">Supports MAVLink TLOG, QGC Plan/Waypoints, DJI Pilot 2 WPML/GS Pro, iNav/MWP Mission, and Parrot FlightPlan.</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">Mission Planner</span>
+          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">QGroundControl</span>
+          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">DJI Pilot 2</span>
+          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">iNav / MWP</span>
+          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">Parrot FreeFlight</span>
+        </div>
+      </div>
+
+      <!-- Dual Path Map: Flown vs Planned Route + Operator Location -->
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-200">Autonomous Mission Adherence: Planned Route vs. Executed Trajectory</h3>
+            <p class="text-xs text-slate-400">Geospatial comparison of uploaded autonomous flight plan against recovered drone blackbox telemetry.</p>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-medium">Flown Telemetry (Blue)</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-medium">Planned Path (Dashed Cyan)</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-medium">🎯 Operator / GCS</span>
+          </div>
+        </div>
+        <div id="gcsMap" style="height: 480px; width: 100%; border-radius: 0.75rem; position: relative; z-index: 10; isolation: isolate;" class="border border-slate-800 relative z-10"></div>
+      </div>
+
+      <!-- Planned Waypoints Schedule Table -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+            <span>📋 Planned Waypoint Mission Schedule & Adherence Audit</span>
+          </h3>
+          <span id="gcsWaypointCountBadge" class="text-xs text-slate-400">0 waypoints</span>
+        </div>
+        <div class="overflow-x-auto max-h-72 overflow-y-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950 text-slate-400 uppercase sticky top-0 border-b border-slate-800 z-10">
+              <tr>
+                <th class="p-2.5">Seq</th>
+                <th class="p-2.5">Command / Action</th>
+                <th class="p-2.5">Coordinates (Lat, Lon)</th>
+                <th class="p-2.5">Planned Alt</th>
+                <th class="p-2.5">Speed</th>
+                <th class="p-2.5">Hold Time</th>
+                <th class="p-2.5">Adherence Status</th>
+              </tr>
+            </thead>
+            <tbody id="gcsWaypointsTableBody" class="divide-y divide-slate-800 bg-slate-950/40">
+              <tr><td colspan="7" class="p-4 text-center text-slate-500">No GCS mission plan loaded for this case.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Ingest GCS Artifact Dropzone & Upload Action -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="text-xl">📥</span>
+            <div>
+              <h3 class="text-sm font-bold text-white">Ingest Ground Control Station Evidence</h3>
+              <p class="text-xs text-slate-400">Upload GCS telemetry (.tlog), mission plans (.plan, .waypoints, .kml, .json, .mission, .mwp), or parameter files.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="md:col-span-2">
+            <input id="gcsFileInput" type="file" accept=".tlog,.plan,.waypoints,.kml,.kmz,.json,.mission,.mwp,.xml,.param,.parm" class="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
+            <span class="text-[11px] text-slate-500 mt-1 block">Supported formats: MAVLink .tlog, QGroundControl .plan, Mission Planner .waypoints, DJI WPML .kml/.kmz, GS Pro .json, iNav .mission, MWP .mwp/.xml, Parrot .mavlink/.json</span>
+          </div>
+          <div class="flex items-start md:items-end">
+            <button id="uploadGcsBtn" onclick="uploadGcsArtifact()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2">
+              <span id="uploadGcsBtnSpinner" class="hidden">⏳</span>
+              <span>Ingest & Correlate GCS Artifact</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-800/80">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-slate-300">Quick-Load Pre-correlated GCS Samples:</span>
+            <span class="text-[11px] text-slate-500">Pairs with normal flight logs for trajectory compliance</span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="loadSampleGcs('ardupilot_mission.waypoints')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+              <span>🗺️</span>
+              <span>ArduPilot .waypoints</span>
+            </button>
+            <button onclick="loadSampleGcs('px4_survey.plan')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+              <span>🛰️</span>
+              <span>PX4 .plan</span>
+            </button>
+            <button onclick="loadSampleGcs('dji_pilot2_mission.kml')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+              <span>📍</span>
+              <span>DJI WPML .kml</span>
+            </button>
+            <button onclick="loadSampleGcs('inav_autonomous.mission')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+              <span>🎮</span>
+              <span>iNav .mission</span>
+            </button>
+            <button onclick="loadSampleGcs('parrot_flightplan.mavlink')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+              <span>🦜</span>
+              <span>Parrot .mavlink</span>
+            </button>
+            <button onclick="loadSampleGcs('ardupilot_telemetry.tlog')" class="bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-800 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+              <span>📡</span>
+              <span>MAVLink .tlog</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="gcsUploadAlert" class="hidden p-3 rounded-lg text-xs"></div>
+      </div>
+    </div>
+
   </section>
 </main>
 
@@ -569,6 +820,11 @@
   let flightPathLayer = null;
   let zonesLayerGroup = null;
 
+  // GCS interactive map state
+  let gcsMap = null;
+  let gcsMapLayers = null;
+  let cachedGcsData = null;
+
   // Geofence interactive builder state
   let activeGeoJson = null;
   let geoPreviewMap = null;
@@ -607,6 +863,14 @@
         if (geoPreviewMap) {
           geoPreviewMap.invalidateSize();
           syncDronePathToPreviewMap();
+        }
+      }, 200);
+    } else if (tabId === 'gcsTab') {
+      setTimeout(() => {
+        initGcsMap();
+        if (gcsMap) {
+          gcsMap.invalidateSize();
+          renderGcsMap();
         }
       }, 200);
     }
@@ -812,11 +1076,28 @@
     activeGeoJson = null;
     clearGeofencePreview();
     document.getElementById('evidenceTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No evidence ingested yet.</td></tr>';
+    document.getElementById('mediaTableBody').innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No media assets ingested yet.</td></tr>';
+    const mBadge = document.getElementById('mediaCountBadge'); if (mBadge) mBadge.textContent = '0 Media Items';
     document.getElementById('violationsTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No geofence infringements detected.</td></tr>';
     document.getElementById('timelineTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No timeline events recorded.</td></tr>';
     document.getElementById('anomaliesTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No anomalies detected.</td></tr>';
     document.getElementById('auditTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No audit records found.</td></tr>';
     document.getElementById('zonesTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No geofence perimeters configured.</td></tr>';
+
+    // GCS reset
+    const gcsPlat = document.getElementById('gcsStatPlatform'); if (gcsPlat) gcsPlat.textContent = 'None';
+    const gcsFc = document.getElementById('gcsStatFC'); if (gcsFc) gcsFc.textContent = 'FC: --';
+    const gcsOp = document.getElementById('gcsStatOperator'); if (gcsOp) gcsOp.textContent = 'Not Identified';
+    const gcsSrc = document.getElementById('gcsStatOpSource'); if (gcsSrc) gcsSrc.textContent = 'Source: --';
+    const gcsWp = document.getElementById('gcsStatWaypoints'); if (gcsWp) gcsWp.textContent = '0';
+    const gcsDist = document.getElementById('gcsStatPlanDist'); if (gcsDist) gcsDist.textContent = 'Planned Dist: 0 m';
+    const gcsAdh = document.getElementById('gcsStatAdherence'); if (gcsAdh) gcsAdh.textContent = '-- %';
+    const gcsRch = document.getElementById('gcsStatReached'); if (gcsRch) gcsRch.textContent = '0 / 0 reached';
+    const gcsCount = document.getElementById('gcsWaypointCountBadge'); if (gcsCount) gcsCount.textContent = '0 waypoints';
+    const gcsTbody = document.getElementById('gcsWaypointsTableBody');
+    if (gcsTbody) gcsTbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No GCS mission plan loaded for this case.</td></tr>';
+    if (gcsMapLayers) gcsMapLayers.clearLayers();
+    cachedGcsData = null;
   }
 
   async function loadCases() {
@@ -904,11 +1185,13 @@
 
     // 4. Populate Tables
     loadEvidenceTable();
+    loadMediaTable();
     loadGeofenceTable();
     loadViolationsTable();
     loadTimelineTable();
     loadAnomaliesTable();
     loadAuditTable();
+    loadGcsData();
   }
 
   function renderMapData(geojson) {
@@ -1264,7 +1547,10 @@
       let typeBadge = '';
       let rowClass = '';
 
-      if (evType === 'ARM' || evType === 'ARMED') {
+      if (evType === 'MEDIA_CAPTURE') {
+        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700 font-bold uppercase">📷 MEDIA CAPTURE</span>`;
+        rowClass = 'bg-cyan-950/20';
+      } else if (evType === 'ARM' || evType === 'ARMED') {
         typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold uppercase">ARMED</span>`;
         rowClass = 'bg-emerald-950/20';
       } else if (evType === 'DISARM' || evType === 'DISARMED') {
@@ -1373,6 +1659,236 @@
     }
   }
 
+  async function uploadMediaFiles() {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first.');
+      return;
+    }
+    const input = document.getElementById('mediaFilesInput');
+    if (!input.files || input.files.length === 0) {
+      alert('Please select one or more media files (.mp4, .mov, .jpg, etc.) to ingest.');
+      return;
+    }
+
+    const files = Array.from(input.files);
+    const btn = document.getElementById('uploadMediaBtn');
+    const spinner = document.getElementById('uploadMediaBtnSpinner');
+    const alertBox = document.getElementById('mediaUploadAlert');
+
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
+    alertBox.textContent = `Ingesting, write-blocking and synchronizing ${files.length} media file(s)...`;
+
+    let syncedCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const formData = new FormData();
+      formData.append('file', file);
+      if (file.lastModified) {
+        formData.append('capture_timestamp', new Date(file.lastModified).toISOString());
+      }
+      formData.append('actor', 'Forensic Investigator');
+
+      try {
+        const res = await fetch(`/api/cases/${activeCaseId}/ingest-media`, {
+          method: 'POST',
+          body: formData
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.has_overlap) syncedCount++;
+        } else {
+          failedCount++;
+        }
+      } catch (e) {
+        failedCount++;
+      }
+    }
+
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+    input.value = '';
+
+    alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
+    alertBox.innerHTML = `✓ <strong>Media Processing Complete!</strong> Ingested <strong>${files.length - failedCount}</strong> file(s). <strong>${syncedCount}</strong> synchronized with flight telemetry and injected into the master timeline.`;
+
+    await refreshCaseData();
+  }
+
+  async function loadMediaTable() {
+    if (!activeCaseId) return;
+    try {
+      const res = await fetch(`/api/cases/${activeCaseId}/media`);
+      if (!res.ok) return;
+      const mediaList = await res.json();
+      const tbody = document.getElementById('mediaTableBody');
+      const badge = document.getElementById('mediaCountBadge');
+      if (badge) badge.textContent = `${mediaList.length} Media Item${mediaList.length === 1 ? '' : 's'}`;
+
+      tbody.innerHTML = '';
+      if (mediaList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No media assets ingested yet.</td></tr>';
+        return;
+      }
+
+      mediaList.forEach(m => {
+        const tr = document.createElement('tr');
+        const isSynced = m.has_telemetry_overlap;
+        const durText = m.duration_sec ? ` (${m.duration_sec}s)` : '';
+        const thumbSrc = m.thumbnail_base64
+          ? `data:image/jpeg;base64,${m.thumbnail_base64}`
+          : `/api/cases/${activeCaseId}/media/${m.item_id}/thumbnail`;
+
+        const typeBadgeClass = m.media_type === 'VIDEO'
+          ? 'bg-purple-950 text-purple-300 border-purple-800'
+          : 'bg-blue-950 text-blue-300 border-blue-800';
+
+        const syncBadge = isSynced
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">✓ SYNCHRONIZED</span>
+             <div class="text-[10px] text-slate-400 mt-1 font-mono">${m.matched_latitude !== null && m.matched_longitude !== null ? `${m.matched_latitude.toFixed(5)}, ${m.matched_longitude.toFixed(5)} (${m.matched_altitude_m !== null ? m.matched_altitude_m.toFixed(1) : 0}m)` : '--'}</div>
+             <div class="text-[10px] text-emerald-400">Δ ${m.time_delta_sec !== null ? m.time_delta_sec + 's' : '0s'}</div>
+             ${(m.has_e01 || m.e01_path) ? `
+             <div class="mt-1.5 flex items-center space-x-1.5">
+               <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono font-semibold">🔒 .EO1 SAVED</span>
+               <a href="/api/cases/${activeCaseId}/media/${m.item_id}/e01" download class="text-[10px] text-sky-400 hover:text-sky-300 hover:underline">⬇ Download</a>
+             </div>` : ''}`
+          : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">NO OVERLAP</span>
+             <div class="text-[10px] text-slate-500 mt-1">Outside flight window</div>`;
+
+        const thumbHtml = m.thumbnail_base64
+          ? `<div class="cursor-pointer group relative w-16 h-12 rounded overflow-hidden border border-slate-700 bg-slate-950 flex items-center justify-center" onclick="openMediaLightbox('${m.item_id}')">
+               <img src="${thumbSrc}" alt="${m.file_name}" class="w-full h-full object-cover group-hover:scale-105 transition" />
+               <span class="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] text-white">🔍</span>
+             </div>`
+          : `<span class="text-[10px] text-slate-500">No preview</span>`;
+
+        tr.innerHTML = `
+          <td class="p-2.5 font-mono text-sky-400 font-bold">${m.item_id}</td>
+          <td class="p-2.5">${thumbHtml}</td>
+          <td class="p-2.5">
+            <div class="font-medium text-white">${m.file_name}</div>
+            <div class="flex items-center space-x-2 mt-1">
+              <span class="px-1.5 py-0.5 rounded text-[10px] border ${typeBadgeClass} font-semibold">${m.media_type}${durText}</span>
+              <span class="text-[10px] text-slate-400">${(m.file_size_bytes / 1024).toFixed(1)} KB</span>
+            </div>
+          </td>
+          <td class="p-2.5 font-mono text-slate-300 text-[11px]">${m.capture_timestamp_utc ? m.capture_timestamp_utc.replace('T', ' ').substring(0, 19) + ' UTC' : 'N/A'}</td>
+          <td class="p-2.5">${syncBadge}</td>
+          <td class="p-2.5 font-mono text-[11px] text-slate-300">
+            <div><span class="text-slate-500">SHA256:</span> ${m.hashes.sha256.substring(0, 20)}...</div>
+          </td>
+          <td class="p-2.5">
+            <button onclick="openMediaLightbox('${m.item_id}')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-[11px] px-2.5 py-1 rounded transition">
+              Inspect Frame
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (e) {
+      console.error('Error loading media table:', e);
+    }
+  }
+
+  async function openMediaLightbox(itemId) {
+    if (!activeCaseId) return;
+    try {
+      const res = await fetch(`/api/cases/${activeCaseId}/media`);
+      if (!res.ok) return;
+      const list = await res.json();
+      const item = list.find(m => m.item_id === itemId);
+      if (!item) return;
+
+      document.getElementById('modalMediaTitle').textContent = `📷 ${item.file_name} (${item.media_type})`;
+      const imgSrc = item.thumbnail_base64
+        ? `data:image/jpeg;base64,${item.thumbnail_base64}`
+        : `/api/cases/${activeCaseId}/media/${item.item_id}/thumbnail`;
+      document.getElementById('modalMediaImg').src = imgSrc;
+      document.getElementById('modalMediaTimestamp').textContent = item.capture_timestamp_utc || 'N/A';
+      document.getElementById('modalMediaCoords').textContent = (item.matched_latitude !== null && item.matched_longitude !== null)
+        ? `${item.matched_latitude.toFixed(6)}, ${item.matched_longitude.toFixed(6)} (Alt: ${item.matched_altitude_m !== null ? item.matched_altitude_m : 0}m)`
+        : (item.has_telemetry_overlap ? 'Synchronized' : 'No telemetry overlap');
+      document.getElementById('modalMediaDelta').textContent = item.has_telemetry_overlap
+        ? `Δ ${item.time_delta_sec !== null ? item.time_delta_sec + 's' : '0s'} to nearest telemetry point`
+        : 'N/A (Outside flight interval)';
+      document.getElementById('modalMediaHash').textContent = item.hashes.sha256;
+
+      const e01El = document.getElementById('modalMediaE01');
+      if (e01El) {
+        if (item.has_e01 || item.e01_path) {
+          const fname = item.e01_path ? item.e01_path.split(/[\\/]/).pop() : (item.file_name.replace(/\.[^/.]+$/, "") + ".eo1");
+          e01El.innerHTML = `<span class="text-emerald-400 font-bold">🔒 ${fname}</span> <a href="/api/cases/${activeCaseId}/media/${item.item_id}/e01" download class="ml-2 text-sky-400 hover:underline font-normal text-[11px]">(Download .eo1)</a>`;
+        } else {
+          e01El.textContent = 'None (Telemetry overlap required)';
+        }
+      }
+
+      document.getElementById('mediaLightboxModal').classList.remove('hidden');
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function closeMediaLightbox() {
+    document.getElementById('mediaLightboxModal').classList.add('hidden');
+    document.getElementById('modalMediaImg').src = '';
+  }
+
+  async function loadSampleMedia(mediaKey) {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first. (Tip: You can load the DJI Mavic 3 sample flight log in the section above first!)');
+      return;
+    }
+    let sampleFile = '';
+    if (mediaKey === 'video') {
+      sampleFile = 'sample_recon_video.mp4';
+    } else if (mediaKey === 'photo') {
+      sampleFile = 'sample_aerial_photo.jpg';
+    } else if (mediaKey === 'unrelated') {
+      sampleFile = 'sample_unrelated_photo.jpg';
+    }
+
+    const alertBox = document.getElementById('mediaUploadAlert');
+    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
+    alertBox.textContent = `Fetching sample '${sampleFile}' and analyzing telemetry synchronization...`;
+
+    try {
+      const blobRes = await fetch(`/samples/${sampleFile}`);
+      if (!blobRes.ok) {
+        alert('Could not locate sample file: ' + sampleFile);
+        return;
+      }
+      const blob = await blobRes.blob();
+      const formData = new FormData();
+      formData.append('file', blob, sampleFile);
+      formData.append('actor', 'Forensic Examiner (Sample Benchmark)');
+
+      const res = await fetch(`/api/cases/${activeCaseId}/ingest-media`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
+        if (data.has_overlap) {
+          alertBox.innerHTML = `✓ <strong>Sample Ingested & Synchronized!</strong> File <code>${sampleFile}</code> overlaps the telemetry window. Representative frame was extracted and a <strong>MEDIA_CAPTURE</strong> event was injected into the master timeline!`;
+        } else {
+          alertBox.innerHTML = `ℹ️ <strong>Sample Ingested (No Overlap)</strong> File <code>${sampleFile}</code> was write-blocked and hashed, but its timestamp (2026-08-15) falls outside the active flight window.`;
+        }
+        await refreshCaseData();
+      } else {
+        const err = await res.json();
+        alert('Error ingesting sample media: ' + err.detail);
+      }
+    } catch (e) {
+      alert('Error loading sample media: ' + e);
+    }
+  }
+
   async function loadSample(platform) {
     if (!activeCaseId) {
       alert('Please select or create an active case first.');
@@ -1421,6 +1937,307 @@
     }
   }
 
+  // --- GCS & OPERATOR FORENSIC ANALYSIS ---
+  function initGcsMap() {
+    if (!gcsMap) {
+      gcsMap = L.map('gcsMap').setView([19.1334, 72.9133], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(gcsMap);
+      gcsMapLayers = L.layerGroup().addTo(gcsMap);
+    }
+  }
+
+  async function loadGcsData() {
+    if (!activeCaseId) return;
+    try {
+      const res = await fetch(`/api/cases/${activeCaseId}/gcs`);
+      if (!res.ok) {
+        cachedGcsData = null;
+        renderGcsMap();
+        return;
+      }
+      const data = await res.json();
+      cachedGcsData = data;
+
+      const gcsName = (data.detected_gcs && data.detected_gcs !== 'NONE') ? data.detected_gcs : (data.gcs_software || 'None');
+      const targetFc = (data.associated_fc && data.associated_fc !== 'NONE') ? data.associated_fc : '';
+      const op = (data.operator_locations && data.operator_locations.length > 0) ? data.operator_locations[0] : (data.operator_location || null);
+      const plan = (data.mission_plans && data.mission_plans.length > 0) ? data.mission_plans[0] : (data.mission_plan || null);
+      const tc = data.mission_comparison || data.trajectory_comparison || null;
+
+      // 1. Stats
+      const gcsPlat = document.getElementById('gcsStatPlatform');
+      if (gcsPlat) gcsPlat.textContent = gcsName;
+
+      const gcsFc = document.getElementById('gcsStatFC');
+      if (gcsFc) {
+        if (targetFc) {
+          gcsFc.textContent = `FC: ${targetFc}`;
+        } else {
+          let fc = 'FC: General UAV';
+          const s = (gcsName || '').toLowerCase();
+          if (s.includes('mission planner') || s.includes('mavproxy')) fc = 'FC: ArduPilot (Pixhawk/Cube)';
+          else if (s.includes('qgroundcontrol')) fc = 'FC: PX4 / ArduPilot';
+          else if (s.includes('dji')) fc = 'FC: DJI Enterprise / Consumer';
+          else if (s.includes('inav') || s.includes('mwp')) fc = 'FC: Betaflight / iNav FPV';
+          else if (s.includes('parrot')) fc = 'FC: Parrot FreeFlight';
+          gcsFc.textContent = fc;
+        }
+      }
+
+      const gcsOp = document.getElementById('gcsStatOperator');
+      const gcsSrc = document.getElementById('gcsStatOpSource');
+      if (op) {
+        if (gcsOp) gcsOp.textContent = `${op.latitude.toFixed(6)}, ${op.longitude.toFixed(6)}`;
+        if (gcsSrc) gcsSrc.textContent = `Alt: ${op.altitude_m !== null && op.altitude_m !== undefined ? op.altitude_m : 0}m (${op.source || 'Header'})`;
+      } else {
+        if (gcsOp) gcsOp.textContent = 'Not Identified';
+        if (gcsSrc) gcsSrc.textContent = 'Source: --';
+      }
+
+      const gcsWp = document.getElementById('gcsStatWaypoints');
+      const gcsDist = document.getElementById('gcsStatPlanDist');
+      if (plan) {
+        const wpCount = plan.waypoints ? plan.waypoints.length : (plan.waypoint_count || 0);
+        if (gcsWp) gcsWp.textContent = wpCount;
+        if (gcsDist) gcsDist.textContent = `Planned Dist: ${plan.total_planned_distance_m} m`;
+      } else {
+        if (gcsWp) gcsWp.textContent = '0';
+        if (gcsDist) gcsDist.textContent = 'Planned Dist: 0 m';
+      }
+
+      const gcsAdh = document.getElementById('gcsStatAdherence');
+      const gcsRch = document.getElementById('gcsStatReached');
+      if (tc) {
+        const score = tc.compliance_score_pct !== undefined ? tc.compliance_score_pct : tc.adherence_score_pct;
+        if (gcsAdh) gcsAdh.textContent = `${score}%`;
+        if (gcsRch) gcsRch.textContent = `${tc.waypoints_reached} / ${tc.waypoints_total} reached (Mean Dev: ${tc.mean_deviation_meters}m)`;
+      } else {
+        if (gcsAdh) gcsAdh.textContent = '-- %';
+        const count = plan && plan.waypoints ? plan.waypoints.length : 0;
+        if (gcsRch) gcsRch.textContent = count > 0 ? `${count} planned (No telemetry overlay)` : '0 / 0 reached';
+      }
+
+      // 2. Waypoints Table
+      const tbody = document.getElementById('gcsWaypointsTableBody');
+      const countBadge = document.getElementById('gcsWaypointCountBadge');
+      if (plan && plan.waypoints && plan.waypoints.length > 0) {
+        const wps = plan.waypoints;
+        if (countBadge) countBadge.textContent = `${wps.length} waypoints`;
+        tbody.innerHTML = '';
+        const reachedCount = tc ? tc.waypoints_reached : null;
+
+        wps.forEach(wp => {
+          const tr = document.createElement('tr');
+          const wpIdx = wp.index !== undefined ? wp.index : wp.sequence;
+          const wpCmd = wp.command || wp.action || 'WAYPOINT';
+          let statusBadge = '<span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">PLANNED</span>';
+          if (reachedCount !== null) {
+            if (wpIdx <= reachedCount) {
+              statusBadge = '<span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold text-[10px] font-mono">✓ REACHED</span>';
+            } else {
+              statusBadge = '<span class="px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-bold text-[10px] font-mono">DEVIATED</span>';
+            }
+          }
+
+          const spdText = (wp.speed_mps !== null && wp.speed_mps !== undefined) ? `${wp.speed_mps.toFixed(1)} m/s` : '--';
+          const holdText = wp.param1 ? `${wp.param1}s` : (wp.hold_time_sec ? `${wp.hold_time_sec}s` : '0s');
+
+          tr.innerHTML = `
+            <td class="p-2.5 font-mono text-cyan-400 font-bold text-center">#${wpIdx}</td>
+            <td class="p-2.5 font-medium text-white">${wpCmd}</td>
+            <td class="p-2.5 font-mono text-slate-300">${wp.latitude.toFixed(6)}, ${wp.longitude.toFixed(6)}</td>
+            <td class="p-2.5 font-mono text-slate-200">${wp.altitude_m.toFixed(1)} m</td>
+            <td class="p-2.5 font-mono text-slate-300">${spdText}</td>
+            <td class="p-2.5 font-mono text-slate-400">${holdText}</td>
+            <td class="p-2.5">${statusBadge}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } else {
+        if (countBadge) countBadge.textContent = '0 waypoints';
+        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No GCS mission plan loaded for this case.</td></tr>';
+      }
+
+      renderGcsMap();
+    } catch (e) {
+      console.error('Error loading GCS data:', e);
+    }
+  }
+
+  function renderGcsMap() {
+    initGcsMap();
+    if (!gcsMap || !gcsMapLayers) return;
+    gcsMapLayers.clearLayers();
+
+    let hasBounds = false;
+    let bounds = L.latLngBounds();
+
+    // 1. Overlay Flown Telemetry
+    if (activeGeoJson && activeGeoJson.features && activeGeoJson.features.length > 0) {
+      const flownLayer = L.geoJSON(activeGeoJson, {
+        style: { color: '#0284c7', weight: 4, opacity: 0.85 },
+        pointToLayer: function(feature, latlng) {
+          return L.circleMarker(latlng, { radius: 4, fillColor: '#38bdf8', color: '#fff', weight: 1, fillOpacity: 0.9 });
+        }
+      });
+      flownLayer.addTo(gcsMapLayers);
+      bounds.extend(flownLayer.getBounds());
+      hasBounds = true;
+    }
+
+    const plan = cachedGcsData ? ((cachedGcsData.mission_plans && cachedGcsData.mission_plans.length > 0) ? cachedGcsData.mission_plans[0] : (cachedGcsData.mission_plan || null)) : null;
+    const op = cachedGcsData ? ((cachedGcsData.operator_locations && cachedGcsData.operator_locations.length > 0) ? cachedGcsData.operator_locations[0] : (cachedGcsData.operator_location || null)) : null;
+
+    // 2. Overlay Planned Waypoints
+    if (plan && plan.waypoints && plan.waypoints.length > 0) {
+      const wps = plan.waypoints;
+      const pts = wps.map(w => [w.latitude, w.longitude]);
+
+      // Connect waypoints with dashed cyan flight path line
+      L.polyline(pts, {
+        color: '#06b6d4',
+        weight: 3,
+        dashArray: '6, 8',
+        opacity: 0.9
+      }).addTo(gcsMapLayers);
+
+      wps.forEach(wp => {
+        const wpIdx = wp.index !== undefined ? wp.index : wp.sequence;
+        const wpCmd = wp.command || wp.action || 'NAV';
+        const wpIcon = L.divIcon({
+          className: 'custom-wp-pin',
+          html: `<div style="background:#06b6d4; color:#020617; font-weight:bold; font-size:10px; border-radius:9999px; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border:1.5px solid #ffffff; box-shadow:0 2px 4px rgba(0,0,0,0.5);">${wpIdx}</div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+
+        const m = L.marker([wp.latitude, wp.longitude], { icon: wpIcon })
+          .bindPopup(`<strong>Waypoint #${wpIdx}</strong><br/>Command: ${wpCmd}<br/>Coords: ${wp.latitude.toFixed(6)}, ${wp.longitude.toFixed(6)}<br/>Planned Alt: ${wp.altitude_m}m`);
+        m.addTo(gcsMapLayers);
+        bounds.extend([wp.latitude, wp.longitude]);
+        hasBounds = true;
+      });
+    }
+
+    // 3. Overlay Operator / GCS Launch Marker
+    if (op) {
+      const opIcon = L.divIcon({
+        className: 'custom-op-pin',
+        html: `<div style="background:#10b981; color:#ffffff; font-size:14px; border-radius:9999px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:2px solid #ffffff; box-shadow:0 0 12px rgba(16,185,129,0.8);">🎮</div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+
+      const m = L.marker([op.latitude, op.longitude], { icon: opIcon })
+        .bindPopup(`<strong>🎯 Operator / Ground Control Station</strong><br/>Coords: ${op.latitude.toFixed(6)}, ${op.longitude.toFixed(6)}<br/>Altitude: ${op.altitude_m !== null && op.altitude_m !== undefined ? op.altitude_m : 0}m<br/>Source: ${op.source || 'GCS Header'}`);
+      m.addTo(gcsMapLayers);
+      bounds.extend([op.latitude, op.longitude]);
+      hasBounds = true;
+    }
+
+    if (hasBounds) {
+      gcsMap.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }
+
+  async function uploadGcsArtifact() {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first.');
+      return;
+    }
+    const input = document.getElementById('gcsFileInput');
+    if (!input.files || input.files.length === 0) {
+      alert('Please choose a GCS evidence file to upload.');
+      return;
+    }
+    const file = input.files[0];
+    const btn = document.getElementById('uploadGcsBtn');
+    const spinner = document.getElementById('uploadGcsBtnSpinner');
+    const alertBox = document.getElementById('gcsUploadAlert');
+
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
+    alertBox.innerHTML = `Ingesting GCS artifact <strong>${file.name}</strong>...`;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('acquisition_type', 'LOGICAL_EXTRACT');
+      formData.append('actor', 'GCS Forensic Analyst');
+
+      const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const plat = (data.platform_detected || data.platform || 'UNKNOWN').toUpperCase();
+        alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
+        alertBox.innerHTML = `✓ <strong>GCS Evidence Ingested!</strong> File <code>${file.name}</code> processed. Platform: <strong>${plat}</strong>. Cryptographic hashes logged to Chain of Custody.`;
+        input.value = '';
+        await refreshCaseData();
+      } else {
+        const err = await res.json();
+        alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
+        alertBox.innerHTML = `❌ Error ingesting file: ${err.detail || 'Unknown error'}`;
+      }
+    } catch (e) {
+      alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
+      alertBox.innerHTML = `❌ Network or processing error: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+      spinner.classList.add('hidden');
+    }
+  }
+
+  async function loadSampleGcs(sampleFile) {
+    if (!activeCaseId) {
+      alert('Please select or create an active case first.');
+      return;
+    }
+    const alertBox = document.getElementById('gcsUploadAlert');
+    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
+    alertBox.innerHTML = `Fetching sample GCS file <strong>${sampleFile}</strong> and parsing mission trajectory...`;
+
+    try {
+      const blobRes = await fetch(`/samples/${sampleFile}`);
+      if (!blobRes.ok) {
+        alert('Could not locate sample file: ' + sampleFile);
+        return;
+      }
+      const blob = await blobRes.blob();
+      const formData = new FormData();
+      formData.append('file', blob, sampleFile);
+      formData.append('acquisition_type', 'LOGICAL_EXTRACT');
+      formData.append('actor', 'GCS Benchmark Examiner');
+
+      const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const plat = (data.platform_detected || data.platform || 'GCS').toUpperCase();
+        alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
+        alertBox.innerHTML = `✓ <strong>Sample GCS Evidence Ingested!</strong> File <code>${sampleFile}</code> processed. Platform: <strong>${plat}</strong>. Cryptographic hashes logged to Chain of Custody.`;
+        await refreshCaseData();
+      } else {
+        const err = await res.json();
+        alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
+        alertBox.innerHTML = `❌ Error ingesting sample file: ${err.detail || 'Unknown error'}`;
+      }
+    } catch (e) {
+      alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
+      alertBox.innerHTML = `❌ Network or processing error: ${e.message}`;
+    }
+  }
+
   // Startup
   window.onload = async () => {
     initMap();
@@ -1428,6 +2245,40 @@
     await loadCatalog();
   };
 </script>
+
+<!-- MEDIA FRAME LIGHTBOX & METADATA MODAL -->
+<div id="mediaLightboxModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full p-5 space-y-4 shadow-2xl">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <h3 id="modalMediaTitle" class="text-sm font-bold text-white flex items-center space-x-2">
+        <span>📷 Extracted Media Frame</span>
+      </h3>
+      <button onclick="closeMediaLightbox()" class="text-slate-400 hover:text-white text-base">✕</button>
+    </div>
+    <div class="flex justify-center bg-slate-950 rounded-lg p-2 border border-slate-800">
+      <img id="modalMediaImg" src="" alt="Frame preview" class="max-h-80 object-contain rounded" />
+    </div>
+    <div class="grid grid-cols-2 gap-3 text-xs">
+      <div class="bg-slate-950 p-3 rounded border border-slate-800 space-y-1">
+        <div class="text-slate-400">Capture Timestamp (UTC)</div>
+        <div id="modalMediaTimestamp" class="font-mono text-white font-medium">--</div>
+        <div class="text-slate-400 mt-2">Telemetry Synchronized Coordinates</div>
+        <div id="modalMediaCoords" class="font-mono text-sky-400 font-medium">--</div>
+      </div>
+      <div class="bg-slate-950 p-3 rounded border border-slate-800 space-y-1">
+        <div class="text-slate-400">Telemetry Sync Delta</div>
+        <div id="modalMediaDelta" class="text-emerald-400 font-medium font-mono">--</div>
+        <div class="text-slate-400 mt-2">SHA-256 Hash</div>
+        <div id="modalMediaHash" class="font-mono text-slate-300 text-[11px] truncate">--</div>
+        <div class="text-slate-400 mt-2">Forensic E01 Container</div>
+        <div id="modalMediaE01" class="font-mono text-emerald-400 text-[11px] truncate">--</div>
+      </div>
+    </div>
+    <div class="flex justify-end pt-2">
+      <button onclick="closeMediaLightbox()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs px-4 py-2 rounded-lg">Close</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

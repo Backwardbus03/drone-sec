@@ -9,6 +9,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timezone
 from dft.plugins.base import DroneForensicPlugin
 from dft.core.models import TelemetryPoint, FlightEvent
+from dft.analysis.gcs import GCSAnalyzer
 
 
 class DJIPlugin(DroneForensicPlugin):
@@ -18,11 +19,11 @@ class DJIPlugin(DroneForensicPlugin):
 
     @property
     def display_name(self) -> str:
-        return "DJI Drone (Mavic / Phantom / Mini / Enterprise)"
+        return "DJI Drone (Mavic / Phantom / Mini / Enterprise / Pilot 2)"
 
     @property
     def supported_extensions(self) -> List[str]:
-        return [".dat", ".txt", ".srt", ".csv"]
+        return [".dat", ".txt", ".srt", ".csv", ".kml", ".kmz", ".json"]
 
     def detect(self, file_path: Path) -> bool:
         ext = file_path.suffix.lower()
@@ -45,8 +46,18 @@ class DJIPlugin(DroneForensicPlugin):
             if ext == ".dat":
                 if b"BUILD_VER" in header or b"DJI" in header or header.startswith(b"\x55\xaa") or header.startswith(b"1234567890"):
                     return True
-                # Generic fallback for .dat files from DJI directory structure
                 if "dji" in file_path.name.lower() or "fly" in file_path.name.lower():
+                    return True
+
+            # DJI Pilot 2 WPML (.kmz or .kml)
+            if ext in [".kmz", ".kml"]:
+                gcs_name, _ = GCSAnalyzer.identify_gcs_format(file_path)
+                if gcs_name == "DJI Pilot 2 (WPML)" or "dji" in file_path.name.lower() or "wpml" in file_path.name.lower():
+                    return True
+
+            # DJI GS Pro JSON flight plan
+            if ext == ".json":
+                if b"gs_pro" in header or b"home_location" in header or b"DJI" in header:
                     return True
         except Exception:
             return False
@@ -62,6 +73,10 @@ class DJIPlugin(DroneForensicPlugin):
             points = self._parse_txt_csv(file_path)
         elif ext == ".dat":
             points = self._parse_dat(file_path)
+        elif ext in [".kml", ".kmz"]:
+            plan, points, _, _ = GCSAnalyzer.parse_dji_wpml(file_path)
+        elif ext == ".json":
+            plan, points, _, _ = GCSAnalyzer.parse_dji_gspro(file_path)
 
         return points
 
@@ -236,6 +251,14 @@ class DJIPlugin(DroneForensicPlugin):
         return points
 
     def parse_events(self, file_path: Path) -> List[FlightEvent]:
+        ext = file_path.suffix.lower()
+        if ext in [".kml", ".kmz"]:
+            _, _, events, _ = GCSAnalyzer.parse_dji_wpml(file_path)
+            return events
+        elif ext == ".json":
+            _, _, events, _ = GCSAnalyzer.parse_dji_gspro(file_path)
+            return events
+
         events: List[FlightEvent] = []
         points = self.parse_telemetry(file_path)
 
@@ -313,7 +336,36 @@ class DJIPlugin(DroneForensicPlugin):
         return events
 
     def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
-        return {
+        ext = file_path.suffix.lower()
+
+        if ext in [".kml", ".kmz"]:
+            plan, _, _, op_locs = GCSAnalyzer.parse_dji_wpml(file_path)
+            meta: Dict[str, Any] = {
+                "platform": "DJI Enterprise (DJI Pilot 2 WPML Mission Plan)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "total_planned_distance_m": plan.total_planned_distance_m,
+                "planned_max_altitude_m": plan.planned_max_altitude_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
+        if ext == ".json":
+            plan, _, _, op_locs = GCSAnalyzer.parse_dji_gspro(file_path)
+            meta = {
+                "platform": "DJI (Ground Station Pro Mission)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "total_planned_distance_m": plan.total_planned_distance_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
+        meta = {
             "platform": "DJI",
             "evidence_file": file_path.name,
             "format": file_path.suffix.upper(),
@@ -324,3 +376,18 @@ class DJIPlugin(DroneForensicPlugin):
                 "Battery Discharge Monitoring"
             ]
         }
+
+        # Check for Home / Operator GPS in CSV flight logs
+        if ext in [".txt", ".csv"]:
+            try:
+                with open(file_path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                    first_lines = [f.readline() for _ in range(5)]
+                for line in first_lines:
+                    if "HOME.latitude" in line or "home_lat" in line.lower() or "rc.latitude" in line.lower():
+                        # Mark DJI mobile app / Smart Controller as GCS
+                        meta["ground_control_station"] = "DJI Fly / DJI GO 4 / DJI Pilot"
+                        break
+            except Exception:
+                pass
+
+        return meta

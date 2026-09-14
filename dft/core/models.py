@@ -32,9 +32,32 @@ class EvidenceItem(BaseModel):
     source_path: str
     file_size_bytes: int
     hashes: HashManifest
-    acquisition_type: Literal["PHYSICAL_IMAGE", "LOGICAL_EXTRACT", "NETWORK_PCAP", "MANUAL_IMPORT"]
+    acquisition_type: Literal["PHYSICAL_IMAGE", "LOGICAL_EXTRACT", "NETWORK_PCAP", "MANUAL_IMPORT", "MEDIA_IMPORT"]
     write_block_verified: bool = True
     drone_platform: Optional[str] = "UNKNOWN"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class MediaCapture(BaseModel):
+    item_id: str
+    case_id: str
+    file_name: str
+    media_type: Literal["IMAGE", "VIDEO"]
+    file_size_bytes: int
+    hashes: HashManifest
+    capture_timestamp_utc: Optional[str] = None
+    duration_sec: Optional[float] = None
+    has_telemetry_overlap: bool = False
+    matched_latitude: Optional[float] = None
+    matched_longitude: Optional[float] = None
+    matched_altitude_m: Optional[float] = None
+    time_delta_sec: Optional[float] = None
+    thumbnail_base64: Optional[str] = None
+    event_id: Optional[str] = None
+    has_e01: bool = False
+    e01_path: Optional[str] = None
+    e01_hashes: Optional[HashManifest] = None
+    metadata_details: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -144,6 +167,57 @@ class AuditLogEntry(BaseModel):
     signature: str
 
 
+class PlannedWaypoint(BaseModel):
+    index: int
+    command: str
+    latitude: float
+    longitude: float
+    altitude_m: float
+    speed_mps: Optional[float] = None
+    param1: Optional[float] = None
+    param2: Optional[float] = None
+    param3: Optional[float] = None
+    param4: Optional[float] = None
+    autocontinue: bool = True
+    action_description: Optional[str] = None
+
+
+class GCSMissionPlan(BaseModel):
+    plan_id: str
+    gcs_name: str
+    target_fc: str
+    file_name: str
+    waypoints: List[PlannedWaypoint] = Field(default_factory=list)
+    planned_home_lat: Optional[float] = None
+    planned_home_lon: Optional[float] = None
+    planned_home_alt_m: Optional[float] = None
+    total_planned_distance_m: float = 0.0
+    planned_max_altitude_m: float = 0.0
+    geofence_included: bool = False
+    geofence_polygons: List[List[List[float]]] = Field(default_factory=list)
+    raw_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OperatorLocation(BaseModel):
+    source: str
+    latitude: float
+    longitude: float
+    altitude_m: Optional[float] = None
+    timestamp_utc: Optional[str] = None
+    accuracy_m: Optional[float] = None
+    description: str = ""
+
+
+class GCSAnalysisResult(BaseModel):
+    detected_gcs: str
+    associated_fc: str
+    gcs_artifacts: List[str] = Field(default_factory=list)
+    operator_locations: List[OperatorLocation] = Field(default_factory=list)
+    mission_plans: List[GCSMissionPlan] = Field(default_factory=list)
+    mission_comparison: Optional[Dict[str, Any]] = None
+    commands_issued: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class FlightSummary(BaseModel):
     platform_detected: str
     total_duration_sec: float
@@ -158,3 +232,6 @@ class FlightSummary(BaseModel):
     events_count: int
     violations_count: int
     anomalies_count: int
+    operator_location: Optional[OperatorLocation] = None
+    gcs_detected: Optional[str] = None
+

@@ -43,6 +43,11 @@ def main():
     rep_parser.add_argument("--examiner", default="Forensic Analyst", help="Examiner name")
     rep_parser.add_argument("--case", default="CLI-CASE-001", help="Case identifier")
 
+    # Command: gcs
+    gcs_parser = subparsers.add_parser("gcs", help="Inspect GCS telemetry, mission plans, operator locations, and waypoints")
+    gcs_parser.add_argument("file", help="Path to GCS telemetry/mission plan file (.tlog, .plan, .waypoints, .kml, .json, .mission, etc.)")
+    gcs_parser.add_argument("--flight-log", default=None, help="Optional flight log file to compare planned mission vs flown path")
+
     # Command: plugins
     subparsers.add_parser("plugins", help="List registered drone platform plugins")
 
@@ -101,6 +106,135 @@ def main():
         print(f"Total Distance   : {summary.total_distance_meters} m")
         print(f"Peak Altitude    : {summary.max_altitude_m} m")
         print(f"Max Speed        : {summary.max_speed_mps} m/s")
+        if summary.gcs_detected:
+            print(f"GCS Software     : {summary.gcs_detected}")
+        if summary.operator_location:
+            op = summary.operator_location
+            print(f"Operator Location: {op.latitude:.6f}, {op.longitude:.6f} (Alt: {op.altitude_m}m, Source: {op.source})")
+
+    elif args.command == "gcs":
+        from dft.analysis.gcs import GCSAnalyzer
+        from dft.core.models import OperatorLocation
+        p = Path(args.file)
+        if not p.exists():
+            print(f"[!] File not found: {args.file}")
+            sys.exit(1)
+
+        gcs_software, fc_family = GCSAnalyzer.identify_gcs_format(p)
+        print("================================================================================")
+        print("         DRONE FORENSIC TOOLKIT — GROUND CONTROL STATION FORENSIC AUDIT         ")
+        print("================================================================================")
+        print(f"Evidence File        : {p.name} ({p.stat().st_size} bytes)")
+        print(f"Format Detected      : {p.suffix.upper()} ({p.name})")
+        print(f"GCS Software         : {gcs_software or 'Unknown GCS'}")
+        print(f"Target FC Family     : {fc_family or 'Unknown FC'}")
+
+        ext = p.suffix.lower()
+        operator_loc = None
+        plan = None
+        tlog_points = []
+
+        if ext == ".tlog":
+            telemetry, events, operator_locations, meta = GCSAnalyzer.parse_mavlink_tlog(p)
+            tlog_points = telemetry
+            if operator_locations:
+                operator_loc = operator_locations[0]
+            print(f"Telemetry Packets    : {len(tlog_points)}")
+            print(f"Events Extracted     : {len(events)}")
+            print(f"Messages Decoded     : {meta.get('messages_decoded', 0)}")
+        elif ext in (".waypoints", ".txt"):
+            plan, _, _, operator_locations = GCSAnalyzer.parse_qgc_wpl(p)
+            if operator_locations:
+                operator_loc = operator_locations[0]
+        elif ext == ".plan":
+            plan, _, _, operator_locations, *_ = GCSAnalyzer.parse_qgc_plan(p)
+            if operator_locations:
+                operator_loc = operator_locations[0]
+        elif ext in (".kml", ".kmz"):
+            plan, _, _, operator_locations = GCSAnalyzer.parse_dji_wpml(p)
+            if operator_locations:
+                operator_loc = operator_locations[0]
+        elif ext in (".mission", ".mwp"):
+            plan, _, _, operator_locations = GCSAnalyzer.parse_inav_mission(p)
+            if operator_locations:
+                operator_loc = operator_locations[0]
+        elif ext == ".mavlink":
+            plan, _, _, operator_locations = GCSAnalyzer.parse_parrot_flightplan(p)
+            if operator_locations:
+                operator_loc = operator_locations[0]
+        elif ext == ".json":
+            try:
+                plan, _, _, ops, *_ = GCSAnalyzer.parse_qgc_plan(p)
+            except Exception:
+                ops = []
+            if not plan or not plan.waypoints:
+                plan, _, _, ops = GCSAnalyzer.parse_dji_gspro(p)
+            if not plan or not plan.waypoints:
+                plan, _, _, ops = GCSAnalyzer.parse_inav_mission(p)
+            if not plan or not plan.waypoints:
+                plan, _, _, ops = GCSAnalyzer.parse_parrot_flightplan(p)
+            if ops:
+                operator_loc = ops[0]
+
+        if not operator_loc and plan and plan.planned_home_lat and plan.planned_home_lon:
+            operator_loc = OperatorLocation(
+                source="PLANNED_HOME",
+                latitude=plan.planned_home_lat,
+                longitude=plan.planned_home_lon,
+                altitude_m=plan.planned_home_alt_m or 0.0,
+                description="Planned Home Position"
+            )
+
+        if operator_loc:
+            print(f"\n[+] OPERATOR / GROUND STATION GEOLOCATION RECOVERED:")
+            print(f"    Latitude         : {operator_loc.latitude:.6f}")
+            print(f"    Longitude        : {operator_loc.longitude:.6f}")
+            print(f"    Altitude         : {operator_loc.altitude_m or 0.0} m")
+            print(f"    Timestamp (UTC)  : {operator_loc.timestamp_utc or 'N/A'}")
+            print(f"    Confidence Source: {operator_loc.source}")
+        else:
+            print("\n[-] Operator geolocation not directly specified in file header.")
+
+        if plan:
+            print(f"\n[+] MISSION PLAN SPECIFICATIONS:")
+            print(f"    Plan Name        : {plan.file_name}")
+            print(f"    Total Waypoints  : {len(plan.waypoints)}")
+            print(f"    Max Planned Alt  : {plan.planned_max_altitude_m} m")
+            print(f"    Planned Distance : {plan.total_planned_distance_m} m")
+            if plan.geofence_polygons:
+                print(f"    Embedded Geofences: {len(plan.geofence_polygons)} polygon(s)")
+
+            print("\n    WAYPOINT FLIGHT SCHEDULE:")
+            print("    ----------------------------------------------------------------------------")
+            print("    Seq | Action / Command      | Latitude   | Longitude  | Alt (m) | Spd (m/s) ")
+            print("    ----------------------------------------------------------------------------")
+            for wp in plan.waypoints:
+                cmd = (wp.command or "WAYPOINT")[:21]
+                spd = wp.speed_mps if wp.speed_mps is not None else 0.0
+                print(f"    {wp.index:3d} | {cmd:21s} | {wp.latitude:10.6f} | {wp.longitude:10.6f} | {wp.altitude_m:7.1f} | {spd:9.1f}")
+            print("    ----------------------------------------------------------------------------")
+
+        telemetry_to_compare = []
+        if args.flight_log:
+            fl_path = Path(args.flight_log)
+            if fl_path.exists():
+                mgr = PluginManager()
+                _, telemetry_to_compare, _, _ = mgr.parse_evidence(fl_path)
+                print(f"\n[*] Loaded {len(telemetry_to_compare)} telemetry points from flight log: {fl_path.name}")
+        elif tlog_points:
+            telemetry_to_compare = tlog_points
+
+        if plan and telemetry_to_compare:
+            comparison = GCSAnalyzer.compare_mission_trajectory(plan, telemetry_to_compare)
+            print("\n[+] AUTONOMOUS MISSION ADHERENCE & TRAJECTORY COMPLIANCE:")
+            print(f"    Adherence Score  : {comparison['compliance_score_pct']}%")
+            print(f"    Waypoints Reached: {comparison['waypoints_reached']} / {comparison['waypoints_total']}")
+            print(f"    Mean Deviation   : {comparison['mean_deviation_meters']} m")
+            print(f"    Max Deviation    : {comparison['max_deviation_meters']} m")
+            if comparison.get('mission_interrupted'):
+                print(f"    [!] MISSION INTERRUPTION DETECTED: Abandoned midway through planned route")
+
+        print("================================================================================")
 
     elif args.command == "report":
         p = Path(args.file)
@@ -116,6 +250,38 @@ def main():
             events=events,
             events_count=len(events), violations_count=len(violations), anomalies_count=len(anomalies)
         )
+
+        from dft.analysis.gcs import GCSAnalyzer
+        from dft.core.models import GCSAnalysisResult
+        gcs_software, fc_family = GCSAnalyzer.identify_gcs_format(p)
+        gcs_res = None
+        if gcs_software:
+            plan = None
+            ops = []
+            ext = p.suffix.lower()
+            if ext == ".plan":
+                plan, _, _, ops = GCSAnalyzer.parse_qgc_plan(p)
+            elif ext in (".waypoints", ".txt"):
+                plan, _, _, ops = GCSAnalyzer.parse_qgc_wpl(p)
+            elif ext in (".kml", ".kmz"):
+                plan, _, _, ops = GCSAnalyzer.parse_dji_wpml(p)
+            elif ext in (".mission", ".mwp"):
+                plan, _, _, ops = GCSAnalyzer.parse_inav_mission(p)
+            elif ext == ".mavlink":
+                plan, _, _, ops = GCSAnalyzer.parse_parrot_flightplan(p)
+
+            comp = None
+            if plan and telemetry:
+                comp = GCSAnalyzer.compare_mission_trajectory(plan, telemetry)
+
+            gcs_res = GCSAnalysisResult(
+                detected_gcs=gcs_software,
+                associated_fc=fc_family or "General UAV",
+                gcs_artifacts=[p.name],
+                operator_locations=ops if ops else ([summary.operator_location] if summary.operator_location else []),
+                mission_plans=[plan] if plan else [],
+                mission_comparison=comp
+            )
 
         case = CaseMetadata(
             case_id=args.case,
@@ -140,7 +306,8 @@ def main():
 
         html = ForensicReportGenerator.generate_html_report(
             case=case, summary=summary, evidence_items=[ev_item],
-            geofence_violations=violations, anomalies=anomalies, timeline=timeline, audit_logs=[coc_entry]
+            geofence_violations=violations, anomalies=anomalies, timeline=timeline, audit_logs=[coc_entry],
+            gcs_analysis=gcs_res
         )
 
         out_path = Path(args.out)

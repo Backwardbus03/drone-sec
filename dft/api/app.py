@@ -5,6 +5,7 @@ REST API backend exposing cases, evidence ingestion, telemetry, geofencing, time
 
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import base64
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +13,8 @@ from pydantic import BaseModel
 
 from dft.core.models import (
     CaseMetadata, EvidenceItem, TelemetryPoint, FlightEvent,
-    GeofenceZone, GeofenceViolation, AnomalyReport, FlightSummary, AuditLogEntry
+    GeofenceZone, GeofenceViolation, AnomalyReport, FlightSummary, AuditLogEntry,
+    MediaCapture, PlannedWaypoint, GCSMissionPlan, OperatorLocation, GCSAnalysisResult
 )
 from dft.core.hashing import compute_hashes
 from dft.core.chain_of_custody import ChainOfCustodyManager
@@ -22,6 +24,8 @@ from dft.analysis.geofence import GeofenceEngine
 from dft.analysis.flight_path import FlightPathAnalyzer
 from dft.analysis.timeline import TimelineReconstructor
 from dft.analysis.anomaly import AnomalyDetector
+from dft.analysis.media_import import process_media_file
+from dft.analysis.gcs import GCSAnalyzer
 from dft.reporting.generator import ForensicReportGenerator
 
 from dft.analysis.restricted_spaces import (
@@ -54,12 +58,14 @@ plugin_mgr = PluginManager()
 # In-Memory state caches
 CASES_STORE: Dict[str, CaseMetadata] = {}
 CASE_EVIDENCE: Dict[str, List[EvidenceItem]] = {}
+CASE_MEDIA: Dict[str, List[MediaCapture]] = {}
 CASE_TELEMETRY: Dict[str, List[TelemetryPoint]] = {}
 CASE_EVENTS: Dict[str, List[FlightEvent]] = {}
 CASE_GEOFENCE_ENGINES: Dict[str, GeofenceEngine] = {}
 CASE_VIOLATIONS: Dict[str, List[GeofenceViolation]] = {}
 CASE_ANOMALIES: Dict[str, List[AnomalyReport]] = {}
 CASE_METADATA_EXTRA: Dict[str, Dict[str, Any]] = {}
+CASE_GCS_DATA: Dict[str, GCSAnalysisResult] = {}
 
 
 class CreateCaseRequest(BaseModel):
@@ -144,12 +150,21 @@ def create_case(req: CreateCaseRequest):
 
     CASES_STORE[case_id] = case
     CASE_EVIDENCE[case_id] = []
+    CASE_MEDIA[case_id] = []
     CASE_TELEMETRY[case_id] = []
     CASE_EVENTS[case_id] = []
     CASE_GEOFENCE_ENGINES[case_id] = GeofenceEngine()
     CASE_VIOLATIONS[case_id] = []
     CASE_ANOMALIES[case_id] = []
     CASE_METADATA_EXTRA[case_id] = {}
+    CASE_STORE_GCS = GCSAnalysisResult(
+        detected_gcs="NONE",
+        associated_fc="NONE",
+        gcs_artifacts=[],
+        operator_locations=[],
+        mission_plans=[]
+    )
+    CASE_GCS_DATA[case_id] = CASE_STORE_GCS
 
     coc_db.log_action(
         case_id=case_id,
@@ -172,12 +187,17 @@ def get_case(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found.")
 
     is_valid_chain, error_msg = coc_db.verify_chain(case_id)
+    gcs_info = CASE_GCS_DATA.get(case_id)
     return {
         "case": CASES_STORE[case_id],
         "evidence_count": len(CASE_EVIDENCE.get(case_id, [])),
+        "media_count": len(CASE_MEDIA.get(case_id, [])),
         "telemetry_count": len(CASE_TELEMETRY.get(case_id, [])),
         "events_count": len(CASE_EVENTS.get(case_id, [])),
         "violations_count": len(CASE_VIOLATIONS.get(case_id, [])),
+        "gcs_detected": gcs_info.detected_gcs if (gcs_info and gcs_info.detected_gcs != "NONE") else None,
+        "operator_locations_count": len(gcs_info.operator_locations) if gcs_info else 0,
+        "mission_plans_count": len(gcs_info.mission_plans) if gcs_info else 0,
         "chain_of_custody_verified": is_valid_chain,
         "chain_error": error_msg
     }
@@ -246,6 +266,79 @@ async def ingest_evidence(
     CASE_EVENTS[case_id].extend(events)
     CASE_METADATA_EXTRA[case_id].update(meta)
 
+    # 4.5. Process Ground Control Station (GCS) Evidence
+    gcs_format, gcs_fc = GCSAnalyzer.identify_gcs_format(dest_path)
+    gcs_name_detected = gcs_format or meta.get("ground_control_station")
+
+    if case_id not in CASE_GCS_DATA:
+        CASE_GCS_DATA[case_id] = GCSAnalysisResult(
+            detected_gcs=gcs_name_detected or "NONE",
+            associated_fc=gcs_fc or platform_id,
+            gcs_artifacts=[]
+        )
+
+    if gcs_name_detected:
+        gcs_entry = CASE_GCS_DATA[case_id]
+        if gcs_entry.detected_gcs == "NONE" or gcs_name_detected:
+            gcs_entry.detected_gcs = gcs_name_detected
+        if gcs_entry.associated_fc == "NONE" or gcs_fc:
+            gcs_entry.associated_fc = gcs_fc or platform_id
+        if file.filename not in gcs_entry.gcs_artifacts:
+            gcs_entry.gcs_artifacts.append(file.filename)
+
+        # Check operator location in metadata
+        if meta.get("operator_location"):
+            op_dict = meta["operator_location"]
+            op_loc = OperatorLocation(**op_dict)
+            if not any(abs(ol.latitude - op_loc.latitude) < 0.00001 and abs(ol.longitude - op_loc.longitude) < 0.00001 for ol in gcs_entry.operator_locations):
+                gcs_entry.operator_locations.append(op_loc)
+
+        # Extract mission plans from supported GCS files
+        ext = dest_path.suffix.lower()
+        if ext in [".waypoints", ".txt"]:
+            try:
+                plan, _, _, _ = GCSAnalyzer.parse_qgc_wpl(dest_path)
+                if plan.waypoints:
+                    gcs_entry.mission_plans.append(plan)
+            except Exception:
+                pass
+        elif ext == ".plan":
+            try:
+                plan, _, _, _, geofs = GCSAnalyzer.parse_qgc_plan(dest_path)
+                if plan.waypoints:
+                    gcs_entry.mission_plans.append(plan)
+                for gz in geofs:
+                    CASE_GEOFENCE_ENGINES[case_id].add_zone(gz)
+            except Exception:
+                pass
+        elif ext in [".kmz", ".kml"] and ("wpml" in str(dest_path).lower() or gcs_format == "DJI Pilot 2 (WPML)"):
+            try:
+                plan, _, _, _ = GCSAnalyzer.parse_dji_wpml(dest_path)
+                if plan.waypoints:
+                    gcs_entry.mission_plans.append(plan)
+            except Exception:
+                pass
+        elif ext in [".mission", ".mwp", ".xml"]:
+            try:
+                plan, _, _, _ = GCSAnalyzer.parse_inav_mission(dest_path)
+                if plan.waypoints:
+                    gcs_entry.mission_plans.append(plan)
+            except Exception:
+                pass
+        elif ext == ".mavlink":
+            try:
+                plan, _, _, _ = GCSAnalyzer.parse_parrot_flightplan(dest_path)
+                if plan.waypoints:
+                    gcs_entry.mission_plans.append(plan)
+            except Exception:
+                pass
+
+    # Trajectory comparison if both planned mission and flight telemetry exist
+    if case_id in CASE_GCS_DATA and CASE_GCS_DATA[case_id].mission_plans and CASE_TELEMETRY[case_id]:
+        first_plan = CASE_GCS_DATA[case_id].mission_plans[0]
+        comp = GCSAnalyzer.compare_mission_trajectory(first_plan, CASE_TELEMETRY[case_id])
+        CASE_GCS_DATA[case_id].mission_comparison = comp
+
     # 5. Run Geofence & Anomaly Engines
     geo_engine = CASE_GEOFENCE_ENGINES[case_id]
     violations = geo_engine.evaluate_telemetry(CASE_TELEMETRY[case_id])
@@ -263,14 +356,195 @@ async def ingest_evidence(
         evidence_item_id=item_id
     )
 
+    gcs_res = CASE_GCS_DATA.get(case_id)
     return {
         "evidence_item": evidence,
         "platform_detected": platform_id,
+        "platform": platform_id,
         "telemetry_points_extracted": len(telemetry),
         "events_extracted": len(events),
         "violations_detected": len(violations),
-        "anomalies_detected": len(anomalies)
+        "anomalies_detected": len(anomalies),
+        "gcs_detected": gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None,
+        "operator_locations_found": len(gcs_res.operator_locations) if gcs_res else 0,
+        "mission_plans_found": len(gcs_res.mission_plans) if gcs_res else 0,
+        "mission_compliance_pct": gcs_res.mission_comparison.get("compliance_score_pct") if (gcs_res and gcs_res.mission_comparison) else None
     }
+
+
+# --- MEDIA EVIDENCE INGESTION & SYNCHRONIZATION ---
+
+@app.post("/api/cases/{case_id}/ingest-media")
+async def ingest_media(
+    case_id: str,
+    file: UploadFile = File(...),
+    capture_timestamp: Optional[str] = Form(None),
+    actor: str = Form("Forensic Examiner")
+):
+    """
+    Ingests UAV media files (MP4, MOV, JPEG, PNG, TIFF, DNG).
+    Extracts metadata, timestamps, and representative frames.
+    Checks for overlap with flight telemetry and synchronizes capture events onto the master timeline.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    case_folder = BASE_DATA_DIR / case_id / "media"
+    case_folder.mkdir(parents=True, exist_ok=True)
+
+    dest_path = case_folder / file.filename
+    if dest_path.exists():
+        try:
+            import os, stat
+            os.chmod(dest_path, stat.S_IWRITE)
+        except Exception:
+            pass
+
+    content = await file.read()
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    # 1. Software Write-Block
+    WriteBlockController.enforce_file_read_only(dest_path)
+    wb_status = WriteBlockController.verify_read_only_status(dest_path)
+
+    # 2. Process Media & Check Overlap
+    if case_id not in CASE_MEDIA:
+        CASE_MEDIA[case_id] = []
+
+    item_id = f"EV-MED-{len(CASE_MEDIA[case_id]) + 1:03d}"
+    telemetry = CASE_TELEMETRY.get(case_id, [])
+    media_cap, flight_event = process_media_file(
+        dest_path, case_id, item_id, telemetry, client_timestamp=capture_timestamp
+    )
+
+    # 3. Register in Master Evidence Vault as MEDIA_IMPORT
+    evidence = EvidenceItem(
+        item_id=item_id,
+        case_id=case_id,
+        file_name=file.filename,
+        source_path=str(dest_path),
+        file_size_bytes=media_cap.file_size_bytes,
+        hashes=media_cap.hashes,
+        acquisition_type="MEDIA_IMPORT",
+        write_block_verified=wb_status["canary_write_blocked"],
+        drone_platform=f"{media_cap.media_type}_MEDIA"
+    )
+    CASE_EVIDENCE[case_id].append(evidence)
+    CASE_MEDIA[case_id].append(media_cap)
+
+    # 3.5. If E01 container was created for overlapping media, register in Evidence Vault
+    eo1_evidence = None
+    if media_cap.has_e01 and media_cap.e01_path:
+        eo1_path = Path(media_cap.e01_path)
+        eo1_item_id = f"{item_id}-EO1"
+        eo1_evidence = EvidenceItem(
+            item_id=eo1_item_id,
+            case_id=case_id,
+            file_name=eo1_path.name,
+            source_path=str(eo1_path),
+            file_size_bytes=media_cap.e01_hashes.byte_count if media_cap.e01_hashes else eo1_path.stat().st_size,
+            hashes=media_cap.e01_hashes or compute_hashes(eo1_path),
+            acquisition_type="PHYSICAL_IMAGE",
+            write_block_verified=True,
+            drone_platform=f"{media_cap.media_type}_EO1"
+        )
+        CASE_EVIDENCE[case_id].append(eo1_evidence)
+
+        coc_db.log_action(
+            case_id=case_id,
+            actor=actor,
+            action="FORENSIC_EO1_IMAGE_CREATED",
+            details=(
+                f"Generated bit-exact .eo1 forensic container for overlapping flight media "
+                f"'{file.filename}' -> '{eo1_path.name}'. "
+                f"SHA-256: {media_cap.e01_hashes.sha256[:16] if media_cap.e01_hashes else 'N/A'}..."
+            ),
+            evidence_item_id=eo1_item_id
+        )
+
+    # 4. If synchronized with flight window, inject into master event timeline
+    if flight_event:
+        CASE_EVENTS[case_id].append(flight_event)
+        try:
+            CASE_EVENTS[case_id].sort(key=lambda e: e.timestamp_utc)
+        except Exception:
+            pass
+
+    # 5. Chain of Custody logging
+    coc_db.log_action(
+        case_id=case_id,
+        actor=actor,
+        action="MEDIA_EVIDENCE_INGESTED",
+        details=(
+            f"Ingested {media_cap.media_type} '{file.filename}' ({media_cap.file_size_bytes} bytes). "
+            f"Overlap with telemetry: {media_cap.has_telemetry_overlap}. "
+            f"SHA-256: {media_cap.hashes.sha256[:12]}..."
+        ),
+        evidence_item_id=item_id
+    )
+
+    return {
+        "status": "SUCCESS",
+        "media_item": media_cap,
+        "has_overlap": media_cap.has_telemetry_overlap,
+        "has_e01": media_cap.has_e01,
+        "e01_path": media_cap.e01_path,
+        "e01_hashes": media_cap.e01_hashes,
+        "flight_event_created": flight_event is not None,
+        "flight_event": flight_event,
+        "time_delta_sec": media_cap.time_delta_sec,
+        "matched_coordinates": {
+            "latitude": media_cap.matched_latitude,
+            "longitude": media_cap.matched_longitude,
+            "altitude_m": media_cap.matched_altitude_m
+        } if media_cap.has_telemetry_overlap else None,
+        "evidence_item": evidence,
+        "eo1_evidence_item": eo1_evidence
+    }
+
+
+@app.get("/api/cases/{case_id}/media", response_model=List[MediaCapture])
+def get_case_media(case_id: str):
+    """Returns all ingested media captures for the specified case."""
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    return CASE_MEDIA.get(case_id, [])
+
+
+@app.get("/api/cases/{case_id}/media/{item_id}/thumbnail")
+def get_media_thumbnail(case_id: str, item_id: str):
+    """Streams the extracted JPEG thumbnail image bytes for a media item."""
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    media_items = CASE_MEDIA.get(case_id, [])
+    target = next((m for m in media_items if m.item_id == item_id), None)
+    if not target or not target.thumbnail_base64:
+        raise HTTPException(status_code=404, detail="Thumbnail not available.")
+
+    img_bytes = base64.b64decode(target.thumbnail_base64)
+    return Response(content=img_bytes, media_type="image/jpeg")
+
+
+@app.get("/api/cases/{case_id}/media/{item_id}/e01")
+def download_media_e01(case_id: str, item_id: str):
+    """Downloads the bit-exact .eo1 forensic container for overlapping media evidence."""
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    media_items = CASE_MEDIA.get(case_id, [])
+    target = next((m for m in media_items if m.item_id == item_id), None)
+    if not target or not target.e01_path:
+        raise HTTPException(status_code=404, detail="E01 container not found for this media item.")
+    e01_file = Path(target.e01_path)
+    if not e01_file.exists():
+        raise HTTPException(status_code=404, detail="E01 container file missing from storage.")
+    with open(e01_file, "rb") as f:
+        content = f.read()
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{e01_file.name}"'}
+    )
 
 
 # --- TELEMETRY & FLIGHT ANALYSIS ---
@@ -310,14 +584,136 @@ def get_summary(case_id: str):
     if CASE_EVIDENCE.get(case_id):
         platform_name = CASE_EVIDENCE[case_id][0].drone_platform or "UNKNOWN"
 
+    gcs_res = CASE_GCS_DATA.get(case_id)
+    op_loc = gcs_res.operator_locations[0] if (gcs_res and gcs_res.operator_locations) else None
+    gcs_name = gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None
+
     return FlightPathAnalyzer.calculate_summary(
         pts,
         platform_name=platform_name,
         events=events,
         events_count=len(events),
         violations_count=len(vios),
-        anomalies_count=len(anoms)
+        anomalies_count=len(anoms),
+        operator_location=op_loc,
+        gcs_detected=gcs_name
     )
+
+
+# --- GROUND CONTROL STATION (GCS) FORENSIC API ---
+
+@app.get("/api/cases/{case_id}/gcs", response_model=GCSAnalysisResult)
+def get_case_gcs_analysis(case_id: str):
+    """
+    Returns complete Ground Control Station forensic analysis for the case:
+    detected GCS software, operator geolocations, planned mission waypoints,
+    and planned vs. executed trajectory compliance metrics.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    if case_id not in CASE_GCS_DATA:
+        return GCSAnalysisResult(
+            detected_gcs="NONE",
+            associated_fc="NONE",
+            gcs_artifacts=[],
+            operator_locations=[],
+            mission_plans=[]
+        )
+
+    return CASE_GCS_DATA[case_id]
+
+
+@app.get("/api/gcs/supported-stations")
+def get_supported_ground_stations():
+    """
+    Returns catalog of all supported Ground Control Stations, compatible FCs,
+    recognized file formats, and forensic capabilities.
+    """
+    return [
+        {
+            "gcs_name": "Mission Planner",
+            "developer": "Michael Oborne / ArduPilot Community",
+            "compatible_fcs": ["ArduPilot (ArduCopter, ArduPlane, ArduRover, Pixhawk, Cube)"],
+            "supported_extensions": [".tlog", ".waypoints", ".plan", ".param", ".parm"],
+            "forensic_capabilities": [
+                "MAVLink 1.0 & 2.0 Downlink Telemetry Stream Decoding",
+                "QGC WPL 110 Autonomous Mission Item Parsing",
+                "GCS Vehicle Home / Operator Launch Coordinate Recovery",
+                "Pre-Arm Check & Downlink STATUSTEXT Parsing",
+                "Vehicle Parameter Dump Extraction"
+            ]
+        },
+        {
+            "gcs_name": "QGroundControl (QGC)",
+            "developer": "Dronecode Project / Lorenz Meier",
+            "compatible_fcs": ["PX4 Autopilot (Pixhawk, FMUv5/v6)", "ArduPilot"],
+            "supported_extensions": [".plan", ".waypoints", ".tlog", ".csv"],
+            "forensic_capabilities": [
+                "QGC JSON Plan Parsing (Mission Items, Survey Grids)",
+                "Geofence Inclusion & Exclusion Polygon Extraction",
+                "Emergency Rally Point Decoding",
+                "Planned Home Position Recovery",
+                "MAVLink Telemetry Stream Analysis"
+            ]
+        },
+        {
+            "gcs_name": "DJI Pilot / DJI Pilot 2 (WPML)",
+            "developer": "DJI Enterprise",
+            "compatible_fcs": ["Matrice 300/350 RTK", "Mavic 3 Enterprise", "Inspire 3"],
+            "supported_extensions": [".kmz", ".kml", ".txt", ".csv"],
+            "forensic_capabilities": [
+                "Waypoint Markup Language (WPML) 3D Trajectory Parsing",
+                "Placemark Altitude & Waypoint Speed Extraction",
+                "Camera & Sensor Trigger Action Reconstruction",
+                "Remote Controller Pilot GPS Geolocation Recovery"
+            ]
+        },
+        {
+            "gcs_name": "DJI Ground Station Pro (GS Pro)",
+            "developer": "DJI",
+            "compatible_fcs": ["Phantom 4 RTK", "Matrice 200/210", "Mavic 2 Pro"],
+            "supported_extensions": [".json", ".kml"],
+            "forensic_capabilities": [
+                "Grid Photogrammetry Survey Plan Extraction",
+                "Waypoints Speed & Heading Sequence Decoding",
+                "GS Pro Home Position & Boundary Recovery"
+            ]
+        },
+        {
+            "gcs_name": "DJI Fly / DJI GO 4",
+            "developer": "DJI",
+            "compatible_fcs": ["DJI Mini / Air / Mavic / Phantom Series"],
+            "supported_extensions": [".txt", ".csv", ".dat"],
+            "forensic_capabilities": [
+                "Mobile Device FlightRecord OSD & Home Decoding",
+                "Remote Controller Stick & Switch Input Reconstruction",
+                "Operator Smartphone / Smart Controller Geolocation"
+            ]
+        },
+        {
+            "gcs_name": "iNav Configurator & Mission Planner / mwp",
+            "developer": "iNav Flight / Cleanflight / stronnag (mwp)",
+            "compatible_fcs": ["iNav / Betaflight (Autonomous Wings & Long-Range Quads)"],
+            "supported_extensions": [".mission", ".mwp", ".xml", ".txt"],
+            "forensic_capabilities": [
+                "iNav Autonomous Navigation Mission Parsing (WAYPOINT, RTH, POSHOLD)",
+                "MWP XML Waypoint Trajectory Decoding",
+                "Configurator CLI Failsafe RTH & Nav Parameter Analysis"
+            ]
+        },
+        {
+            "gcs_name": "Parrot FreeFlight 6 / FlightPlan",
+            "developer": "Parrot Drones SAS",
+            "compatible_fcs": ["Parrot Anafi / Anafi USA / Bebop 2 / Disco"],
+            "supported_extensions": [".mavlink", ".json", ".pud"],
+            "forensic_capabilities": [
+                "FreeFlight Autonomous FlightPlan Mission Extraction",
+                "Parrot Skycontroller 3/4 Hardware Telemetry Recovery",
+                "Operator Mobile Controller GPS Geolocation"
+            ]
+        }
+    ]
 
 
 # --- GEOFENCING CONFIGURATION, REAL-WORLD CATALOG & EVALUATION ---
@@ -479,15 +875,23 @@ def get_html_report(case_id: str):
     timeline = TimelineReconstructor.build_master_timeline(events, vios, anoms)
 
     platform_name = ev_items[0].drone_platform if ev_items else "UNKNOWN"
+    gcs_res = CASE_GCS_DATA.get(case_id)
+    op_loc = gcs_res.operator_locations[0] if (gcs_res and gcs_res.operator_locations) else None
+    gcs_name = gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None
+
     summary = FlightPathAnalyzer.calculate_summary(
         pts, platform_name=platform_name,
         events=events,
-        events_count=len(events), violations_count=len(vios), anomalies_count=len(anoms)
+        events_count=len(events), violations_count=len(vios), anomalies_count=len(anoms),
+        operator_location=op_loc,
+        gcs_detected=gcs_name
     )
 
+    media_items = CASE_MEDIA.get(case_id, [])
     html = ForensicReportGenerator.generate_html_report(
         case=case, summary=summary, evidence_items=ev_items,
-        geofence_violations=vios, anomalies=anoms, timeline=timeline, audit_logs=audit_logs
+        geofence_violations=vios, anomalies=anoms, timeline=timeline, audit_logs=audit_logs,
+        gcs_analysis=gcs_res, media_items=media_items
     )
     return html
 
@@ -507,15 +911,23 @@ def get_json_report(case_id: str):
     timeline = TimelineReconstructor.build_master_timeline(events, vios, anoms)
 
     platform_name = ev_items[0].drone_platform if ev_items else "UNKNOWN"
+    gcs_res = CASE_GCS_DATA.get(case_id)
+    op_loc = gcs_res.operator_locations[0] if (gcs_res and gcs_res.operator_locations) else None
+    gcs_name = gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None
+
     summary = FlightPathAnalyzer.calculate_summary(
         pts, platform_name=platform_name,
         events=events,
-        events_count=len(events), violations_count=len(vios), anomalies_count=len(anoms)
+        events_count=len(events), violations_count=len(vios), anomalies_count=len(anoms),
+        operator_location=op_loc,
+        gcs_detected=gcs_name
     )
 
+    media_items = CASE_MEDIA.get(case_id, [])
     json_str = ForensicReportGenerator.generate_json_export(
         case=case, summary=summary, evidence_items=ev_items,
-        geofence_violations=vios, anomalies=anoms, timeline=timeline, audit_logs=audit_logs
+        geofence_violations=vios, anomalies=anoms, timeline=timeline, audit_logs=audit_logs,
+        gcs_analysis=gcs_res, media_items=media_items
     )
     return Response(content=json_str, media_type="application/json")
 
@@ -526,7 +938,8 @@ def get_dfxml_report(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found.")
     case = CASES_STORE[case_id]
     ev_items = CASE_EVIDENCE.get(case_id, [])
-    dfxml = ForensicReportGenerator.generate_dfxml_export(case, ev_items)
+    media_items = CASE_MEDIA.get(case_id, [])
+    dfxml = ForensicReportGenerator.generate_dfxml_export(case, ev_items, media_items=media_items)
     return Response(
         content=dfxml,
         media_type="application/xml",

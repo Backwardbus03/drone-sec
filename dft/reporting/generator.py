@@ -6,7 +6,7 @@ formatted in accordance with ISO/IEC 27037:2012 and ISO/IEC 27042:2015.
 
 import json
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from jinja2 import Template
 from dft.core.models import CaseMetadata, EvidenceItem, FlightSummary, GeofenceViolation, AnomalyReport, AuditLogEntry
 
@@ -127,6 +127,140 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
 </div>
+
+{% if (gcs_analysis and gcs_analysis.detected_gcs != 'NONE') or summary.gcs_detected or summary.operator_location %}
+<div class="card" style="border-left: 4px solid #0284c7;">
+  <h2 class="section-title">Ground Control Station (GCS) & Operator Forensics</h2>
+  <div class="grid-2">
+    <div>
+      <p><strong>Detected GCS Platform:</strong> <span class="badge badge-info">{{ (gcs_analysis.detected_gcs if gcs_analysis and gcs_analysis.detected_gcs != 'NONE' else None) or summary.gcs_detected or 'GCS Telemetry Session' }}</span></p>
+      <p><strong>Associated Autopilot:</strong> {{ (gcs_analysis.associated_fc if gcs_analysis and gcs_analysis.associated_fc != 'NONE' else None) or summary.platform_detected }}</p>
+      {% if summary.operator_location or (gcs_analysis and gcs_analysis.operator_locations) %}
+      {% set op = summary.operator_location or gcs_analysis.operator_locations[0] %}
+      <p><strong>Operator / Launch Location:</strong> <span class="hash-box">{{ op.latitude|round(6) }}, {{ op.longitude|round(6) }} (Alt: {{ op.altitude_m|round(1) if op.altitude_m else '0.0' }}m)</span></p>
+      <p><strong>Geolocation Source:</strong> <span style="font-size: 13px; color: #64748b;">{{ op.source }}</span></p>
+      {% endif %}
+    </div>
+    <div>
+      {% if gcs_analysis and gcs_analysis.mission_plans %}
+      {% set plan = gcs_analysis.mission_plans[0] %}
+      <p><strong>Autonomous Mission Plan:</strong> {{ plan.file_name }}</p>
+      <p><strong>Planned Waypoints Count:</strong> {{ plan.waypoints|length }}</p>
+      <p><strong>Planned Route Length:</strong> {{ plan.total_planned_distance_m }}m (Ceiling: {{ plan.planned_max_altitude_m }}m)</p>
+      {% endif %}
+      {% if gcs_analysis and gcs_analysis.mission_comparison %}
+      {% set comp = gcs_analysis.mission_comparison %}
+      <p><strong>Mission Path Adherence:</strong> <span class="badge {% if comp.compliance_score_pct >= 80 %}badge-success{% elif comp.compliance_score_pct >= 50 %}badge-warning{% else %}badge-danger{% endif %}">{{ comp.compliance_score_pct }}% Compliance</span></p>
+      <p><strong>Waypoints Reached:</strong> {{ comp.waypoints_reached }} of {{ comp.waypoints_total }} (Mean Dev: {{ comp.mean_deviation_meters }}m)</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if gcs_analysis and gcs_analysis.mission_plans and gcs_analysis.mission_plans[0].waypoints %}
+  <h3 style="font-size: 14px; font-weight: 600; margin-top: 15px; color: #334155;">Planned Autonomous Waypoints Schedule</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>WP #</th>
+        <th>Action / Command</th>
+        <th>Coordinates (WGS-84)</th>
+        <th>Altitude</th>
+        <th>Speed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for wp in gcs_analysis.mission_plans[0].waypoints[:15] %}
+      <tr>
+        <td><strong>#{{ wp.index }}</strong></td>
+        <td><span class="badge badge-info">{{ wp.command }}</span></td>
+        <td>{{ wp.latitude|round(6) }}, {{ wp.longitude|round(6) }}</td>
+        <td>{{ wp.altitude_m|round(1) }}m</td>
+        <td>{{ wp.speed_mps or '12.0' }} m/s</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if gcs_analysis.mission_plans[0].waypoints|length > 15 %}
+  <p style="font-size: 11px; color: #64748b; margin-top: 6px;">* Displaying first 15 waypoints. Full plan preserved in digital evidence record.</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+{% if media_items %}
+<div class="card" style="border-left: 4px solid #0284c7;">
+  <h2 class="section-title">Aerial Visual Evidence & Synchronized Media Captures</h2>
+  <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">
+    Examines UAV imagery and video captured during the incident. All media items synchronized with flight telemetry have been preserved in bit-exact Expert Witness Format (.eo1 / .E01) containers with dual SHA-256 and SHA-3-256 cryptographic hashing in compliance with ISO/IEC 27037:2012.
+  </p>
+  
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; margin-top: 15px;">
+    {% for m in media_items %}
+    <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+      {% if m.thumbnail_base64 %}
+      <div style="width: 100%; height: 180px; background: #0f172a; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+        <img src="data:image/jpeg;base64,{{ m.thumbnail_base64 }}" alt="{{ m.file_name }}" style="width: 100%; height: 100%; object-fit: cover;" />
+      </div>
+      {% else %}
+      <div style="width: 100%; height: 140px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 13px;">
+        No Visual Preview Available
+      </div>
+      {% endif %}
+      <div style="padding: 14px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-family: monospace; font-weight: 700; color: #0284c7; font-size: 12px;">{{ m.item_id }}</span>
+            {% if m.has_telemetry_overlap %}
+            <span class="badge badge-success" style="font-size: 10px; font-weight: 700;">✓ SYNCHRONIZED</span>
+            {% else %}
+            <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 10px;">NO OVERLAP</span>
+            {% endif %}
+          </div>
+          <p style="margin: 0 0 6px 0; font-weight: 600; font-size: 13px; color: #0f172a; word-break: break-all;">{{ m.file_name }}</p>
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">
+            <span>Type: <strong>{{ m.media_type }}</strong></span>
+            {% if m.duration_sec %} &bull; <span>Duration: <strong>{{ m.duration_sec }}s</strong></span>{% endif %}
+            &bull; <span>Size: <strong>{{ (m.file_size_bytes / 1024)|round(1) }} KB</strong></span>
+          </div>
+
+          {% if m.capture_timestamp_utc %}
+          <div style="font-size: 11px; margin-bottom: 4px;">
+            <strong>Capture Time (UTC):</strong> <span style="font-family: monospace; color: #334155;">{{ m.capture_timestamp_utc }}</span>
+          </div>
+          {% endif %}
+
+          {% if m.has_telemetry_overlap and m.matched_latitude %}
+          <div style="font-size: 11px; margin-bottom: 4px;">
+            <strong>Correlated Coordinates:</strong>
+            <span class="hash-box" style="display: inline-block; margin-top: 2px;">{{ m.matched_latitude|round(5) }}, {{ m.matched_longitude|round(5) }} ({{ m.matched_altitude_m|round(1) if m.matched_altitude_m is not none else '0.0' }}m)</span>
+          </div>
+          {% if m.time_delta_sec is not none %}
+          <div style="font-size: 11px; margin-bottom: 6px; color: #059669; font-weight: 600;">
+            Sync Delta: Δ {{ m.time_delta_sec }}s relative to flight log
+          </div>
+          {% endif %}
+          {% endif %}
+
+          {% if m.e01_path %}
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; padding: 6px 8px; margin-top: 6px; font-size: 11px;">
+            <div style="color: #166534; font-weight: 700;">🔒 Forensic Container (.eo1):</div>
+            <div style="font-family: monospace; color: #15803d; word-break: break-all; margin-top: 2px;">{{ m.file_name.rsplit('.', 1)[0] }}.eo1</div>
+            {% if m.e01_hashes %}
+            <div style="font-family: monospace; color: #475569; font-size: 10px; margin-top: 2px;">SHA256: {{ m.e01_hashes.sha256[:16] }}...</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+
+        <div style="margin-top: 8px; font-size: 11px; color: #475569; border-top: 1px solid #f1f5f9; padding-top: 6px;">
+          <div><span style="color: #64748b;">SHA-256:</span> <span class="hash-box" style="font-size: 10px;">{{ m.hashes.sha256[:20] }}...{{ m.hashes.sha256[-12:] }}</span></div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <h2 class="section-title">Itemized Evidence & Cryptographic Hashes</h2>
@@ -305,7 +439,9 @@ class ForensicReportGenerator:
         geofence_violations: List[GeofenceViolation],
         anomalies: List[AnomalyReport],
         timeline: List[Dict[str, Any]],
-        audit_logs: List[AuditLogEntry]
+        audit_logs: List[AuditLogEntry],
+        gcs_analysis: Any = None,
+        media_items: Optional[List[Any]] = None
     ) -> str:
         """Generates comprehensive court-admissible HTML report."""
         template = Template(HTML_TEMPLATE)
@@ -317,6 +453,8 @@ class ForensicReportGenerator:
             anomalies=anomalies,
             timeline=timeline,
             audit_logs=audit_logs,
+            gcs_analysis=gcs_analysis,
+            media_items=media_items or [],
             report_generated_utc=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         )
 
@@ -328,7 +466,9 @@ class ForensicReportGenerator:
         geofence_violations: List[GeofenceViolation],
         anomalies: List[AnomalyReport],
         timeline: List[Dict[str, Any]],
-        audit_logs: List[AuditLogEntry]
+        audit_logs: List[AuditLogEntry],
+        gcs_analysis: Any = None,
+        media_items: Optional[List[Any]] = None
     ) -> str:
         """Generates structured JSON representation for machine ingestion."""
         payload = {
@@ -339,12 +479,19 @@ class ForensicReportGenerator:
             "anomalies": [a.model_dump() for a in anomalies],
             "timeline": timeline,
             "chain_of_custody": [log.model_dump() for log in audit_logs],
+            "ground_control_station": gcs_analysis.model_dump() if (gcs_analysis and hasattr(gcs_analysis, "model_dump")) else gcs_analysis,
+            "gcs_analysis": gcs_analysis.model_dump() if (gcs_analysis and hasattr(gcs_analysis, "model_dump")) else gcs_analysis,
+            "media_items": [m.model_dump() if hasattr(m, "model_dump") else m for m in (media_items or [])],
             "generated_at_utc": datetime.now(timezone.utc).isoformat()
         }
         return json.dumps(payload, indent=2)
 
     @staticmethod
-    def generate_dfxml_export(case: CaseMetadata, evidence_items: List[EvidenceItem]) -> str:
+    def generate_dfxml_export(
+        case: CaseMetadata,
+        evidence_items: List[EvidenceItem],
+        media_items: Optional[List[Any]] = None
+    ) -> str:
         """Generates Digital Forensics XML (DFXML) interchange document."""
         xml = ['<?xml version="1.0" encoding="UTF-8"?>', '<dfxml xmloutputversion="1.0">']
         xml.append('  <metadata>')
@@ -366,6 +513,28 @@ class ForensicReportGenerator:
             xml.append(f'    <hashdigest type="SHA3-256">{ev.hashes.sha3_256}</hashdigest>')
             xml.append(f'    <hashdigest type="MD5">{ev.hashes.md5}</hashdigest>')
             xml.append('  </fileobject>')
+
+        if media_items:
+            for m in media_items:
+                fname = getattr(m, "file_name", m.get("file_name", "unknown") if isinstance(m, dict) else "unknown")
+                fsize = getattr(m, "file_size_bytes", m.get("file_size_bytes", 0) if isinstance(m, dict) else 0)
+                hashes = getattr(m, "hashes", m.get("hashes") if isinstance(m, dict) else None)
+                sha256 = getattr(hashes, "sha256", hashes.get("sha256", "") if isinstance(hashes, dict) else "") if hashes else ""
+                sha3_256 = getattr(hashes, "sha3_256", hashes.get("sha3_256", "") if isinstance(hashes, dict) else "") if hashes else ""
+                md5_val = getattr(hashes, "md5", hashes.get("md5", "") if isinstance(hashes, dict) else "") if hashes else ""
+                xml.append('  <fileobject type="visual_media">')
+                xml.append(f'    <filename>{fname}</filename>')
+                xml.append(f'    <filesize>{fsize}</filesize>')
+                if sha256:
+                    xml.append(f'    <hashdigest type="SHA256">{sha256}</hashdigest>')
+                if sha3_256:
+                    xml.append(f'    <hashdigest type="SHA3-256">{sha3_256}</hashdigest>')
+                if md5_val:
+                    xml.append(f'    <hashdigest type="MD5">{md5_val}</hashdigest>')
+                e01_p = getattr(m, "e01_path", m.get("e01_path") if isinstance(m, dict) else None)
+                if e01_p:
+                    xml.append(f'    <forensic_container type="E01">{e01_p}</forensic_container>')
+                xml.append('  </fileobject>')
 
         xml.append('</dfxml>')
         return "\n".join(xml)

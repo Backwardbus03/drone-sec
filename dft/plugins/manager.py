@@ -58,15 +58,15 @@ class PluginManager:
         if not plugin:
             # Fallback heuristic based on extension
             ext = file_path.suffix.lower()
-            if ext in [".dat", ".srt"]:
+            if ext in [".dat", ".srt", ".kmz", ".kml"]:
                 plugin = DJIPlugin()
-            elif ext in [".bin", ".tlog"]:
+            elif ext in [".bin", ".tlog", ".param", ".parm", ".waypoints"]:
                 plugin = ArduPilotPlugin()
-            elif ext == ".ulg":
+            elif ext in [".ulg", ".plan"]:
                 plugin = PX4Plugin()
-            elif ext == ".pud":
+            elif ext in [".pud", ".mavlink"]:
                 plugin = ParrotPlugin()
-            elif ext == ".bbl":
+            elif ext in [".bbl", ".mission", ".mwp"]:
                 plugin = BetaflightPlugin()
             else:
                 plugin = DJIPlugin()  # Default fallback

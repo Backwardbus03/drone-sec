@@ -18,7 +18,9 @@ class FlightPathAnalyzer:
         events: Optional[List[FlightEvent]] = None,
         events_count: int = 0,
         violations_count: int = 0,
-        anomalies_count: int = 0
+        anomalies_count: int = 0,
+        operator_location: Any = None,
+        gcs_detected: Optional[str] = None
     ) -> FlightSummary:
         """Computes end-to-end flight performance and spatial statistics."""
         actual_events_count = len(events) if events is not None else events_count
@@ -48,7 +50,9 @@ class FlightPathAnalyzer:
                 telemetry_count=0,
                 events_count=actual_events_count,
                 violations_count=violations_count,
-                anomalies_count=anomalies_count
+                anomalies_count=anomalies_count,
+                operator_location=operator_location,
+                gcs_detected=gcs_detected
             )
 
         total_distance = 0.0
@@ -90,7 +94,9 @@ class FlightPathAnalyzer:
             telemetry_count=len(telemetry),
             events_count=actual_events_count,
             violations_count=violations_count,
-            anomalies_count=anomalies_count
+            anomalies_count=anomalies_count,
+            operator_location=operator_location,
+            gcs_detected=gcs_detected
         )
 
     @staticmethod

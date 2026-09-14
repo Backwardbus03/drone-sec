@@ -10,6 +10,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from dft.plugins.base import DroneForensicPlugin
 from dft.core.models import TelemetryPoint, FlightEvent
+from dft.analysis.gcs import GCSAnalyzer
 
 ULOG_MAGIC = b"ULog\x01\x12\x35"
 
@@ -25,7 +26,7 @@ class PX4Plugin(DroneForensicPlugin):
 
     @property
     def supported_extensions(self) -> List[str]:
-        return [".ulg", ".csv"]
+        return [".ulg", ".csv", ".plan", ".waypoints", ".tlog"]
 
     def detect(self, file_path: Path) -> bool:
         ext = file_path.suffix.lower()
@@ -34,18 +35,35 @@ class PX4Plugin(DroneForensicPlugin):
 
         try:
             with open(file_path, "rb") as f:
-                header = f.read(16)
+                header = f.read(512)
 
             # Check binary ULog magic header
             if ext == ".ulg" and (header.startswith(ULOG_MAGIC) or b"ULog" in header):
                 return True
 
-            # Check CSV export from PX4
+            # Check CSV export from PX4 / QGroundControl
             if ext == ".csv":
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     first_line = f.readline()
                 if "timestamp" in first_line and ("lat" in first_line or "vehicle_gps" in first_line or "lon" in first_line):
                     return True
+
+            # Check QGroundControl .plan JSON
+            if ext == ".plan":
+                if b"QGroundControl" in header or b'"fileType": "Plan"' in header:
+                    return True
+
+            # Check QGC WPL waypoints
+            if ext in [".waypoints", ".txt"] and b"QGC WPL" in header:
+                return True
+
+            # Check MAVLink tlog
+            if ext == ".tlog" and (b"\xfe" in header or b"\xfd" in header):
+                return True
+
+            name_lower = file_path.name.lower()
+            if any(k in name_lower for k in ("px4", "qgroundcontrol", "qgc")):
+                return True
         except Exception:
             return False
         return False
@@ -56,6 +74,15 @@ class PX4Plugin(DroneForensicPlugin):
             return self._parse_csv_telemetry(file_path)
         elif ext == ".ulg":
             return self._parse_ulg_binary(file_path)
+        elif ext == ".plan":
+            plan, pts, _, _, _ = GCSAnalyzer.parse_qgc_plan(file_path)
+            return pts
+        elif ext in [".waypoints", ".txt"]:
+            plan, pts, _, _ = GCSAnalyzer.parse_qgc_wpl(file_path)
+            return pts
+        elif ext == ".tlog":
+            pts, _, _, _ = GCSAnalyzer.parse_mavlink_tlog(file_path)
+            return pts
         return []
 
     def _parse_csv_telemetry(self, file_path: Path) -> List[TelemetryPoint]:
@@ -153,6 +180,17 @@ class PX4Plugin(DroneForensicPlugin):
         return points
 
     def parse_events(self, file_path: Path) -> List[FlightEvent]:
+        ext = file_path.suffix.lower()
+        if ext == ".plan":
+            _, _, events, _, _ = GCSAnalyzer.parse_qgc_plan(file_path)
+            return events
+        elif ext in [".waypoints", ".txt"]:
+            _, _, events, _ = GCSAnalyzer.parse_qgc_wpl(file_path)
+            return events
+        elif ext == ".tlog":
+            _, events, _, _ = GCSAnalyzer.parse_mavlink_tlog(file_path)
+            return events
+
         events: List[FlightEvent] = []
         pts = self.parse_telemetry(file_path)
 
@@ -209,6 +247,47 @@ class PX4Plugin(DroneForensicPlugin):
         return events
 
     def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
+        ext = file_path.suffix.lower()
+        if ext == ".plan":
+            plan, _, _, op_locs, geofences = GCSAnalyzer.parse_qgc_plan(file_path)
+            meta: Dict[str, Any] = {
+                "platform": "PX4 Autopilot (QGroundControl Plan)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "geofences_count": len(geofences),
+                "total_planned_distance_m": plan.total_planned_distance_m,
+                "planned_max_altitude_m": plan.planned_max_altitude_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
+        if ext in [".waypoints", ".txt"]:
+            plan, _, _, op_locs = GCSAnalyzer.parse_qgc_wpl(file_path)
+            meta = {
+                "platform": "PX4 Autopilot (QGC Waypoints)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "total_planned_distance_m": plan.total_planned_distance_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
+        if ext == ".tlog":
+            _, _, op_locs, tlog_meta = GCSAnalyzer.parse_mavlink_tlog(file_path)
+            meta = {
+                "platform": "PX4 Autopilot (MAVLink Telemetry)",
+                "evidence_file": file_path.name,
+                "ground_control_station": "QGroundControl",
+                "gcs_telemetry_meta": tlog_meta
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
         return {
             "platform": "PX4 Autopilot",
             "evidence_file": file_path.name,

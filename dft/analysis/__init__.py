@@ -6,6 +6,7 @@ from dft.analysis.flight_path import FlightPathAnalyzer
 from dft.analysis.timeline import TimelineReconstructor
 from dft.analysis.anomaly import AnomalyDetector
 from dft.analysis.correlator import CrossSourceCorrelator
+from dft.analysis.gcs import GCSAnalyzer
 
 __all__ = [
     "GeofenceEngine",
@@ -13,6 +14,7 @@ __all__ = [
     "TimelineReconstructor",
     "AnomalyDetector",
     "CrossSourceCorrelator",
+    "GCSAnalyzer",
     "haversine_distance_meters",
     "point_in_polygon"
 ]

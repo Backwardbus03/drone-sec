@@ -9,6 +9,7 @@ from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from dft.plugins.base import DroneForensicPlugin
 from dft.core.models import TelemetryPoint, FlightEvent
+from dft.analysis.gcs import GCSAnalyzer
 
 
 class ArduPilotPlugin(DroneForensicPlugin):
@@ -22,7 +23,7 @@ class ArduPilotPlugin(DroneForensicPlugin):
 
     @property
     def supported_extensions(self) -> List[str]:
-        return [".bin", ".log", ".tlog"]
+        return [".bin", ".log", ".tlog", ".waypoints", ".plan", ".param", ".parm"]
 
     def detect(self, file_path: Path) -> bool:
         ext = file_path.suffix.lower()
@@ -31,7 +32,7 @@ class ArduPilotPlugin(DroneForensicPlugin):
 
         try:
             with open(file_path, "rb") as f:
-                header = f.read(256)
+                header = f.read(512)
 
             # DataFlash binary magic: 0xA3 0x95
             if ext == ".bin" and header.startswith(b"\xa3\x95"):
@@ -41,12 +42,27 @@ class ArduPilotPlugin(DroneForensicPlugin):
             if ext in [".log", ".txt"] and b"FMT," in header:
                 return True
 
-            # MAVLink tlog check (magic byte 0xFE for MAVLink 1, 0xFD for MAVLink 2)
-            if ext == ".tlog" and (header.startswith(b"\xfe") or header.startswith(b"\xfd")):
+            # MAVLink tlog check (magic byte 0xFE for MAVLink 1, 0xFD for MAVLink 2 preceded by timestamp)
+            if ext == ".tlog":
+                if b"\xfe" in header or b"\xfd" in header:
+                    return True
+
+            # QGC WPL waypoints (used by Mission Planner & QGroundControl)
+            if ext in [".waypoints", ".txt"] and b"QGC WPL" in header:
+                return True
+
+            # QGroundControl .plan JSON
+            if ext == ".plan":
+                if b"QGroundControl" in header or b"Plan" in header:
+                    return True
+
+            # Parameter files (.param, .parm)
+            if ext in [".param", ".parm"]:
                 return True
 
             # Name heuristic
-            if "ardupilot" in file_path.name.lower() or "pixhawk" in file_path.name.lower():
+            name_lower = file_path.name.lower()
+            if any(k in name_lower for k in ("ardupilot", "pixhawk", "mission_planner", "arducopter", "arduplane")):
                 return True
         except Exception:
             return False
@@ -60,6 +76,12 @@ class ArduPilotPlugin(DroneForensicPlugin):
             return self._parse_binary_dataflash(file_path)
         elif ext == ".tlog":
             return self._parse_tlog(file_path)
+        elif ext in [".waypoints", ".txt"]:
+            plan, pts, _, _ = GCSAnalyzer.parse_qgc_wpl(file_path)
+            return pts
+        elif ext == ".plan":
+            plan, pts, _, _, _ = GCSAnalyzer.parse_qgc_plan(file_path)
+            return pts
         return []
 
     def _parse_ascii_log(self, file_path: Path) -> List[TelemetryPoint]:
@@ -186,23 +208,22 @@ class ArduPilotPlugin(DroneForensicPlugin):
         return points
 
     def _parse_tlog(self, file_path: Path) -> List[TelemetryPoint]:
-        """Parses MAVLink telemetry stream log."""
-        points: List[TelemetryPoint] = []
-        base_time = datetime.now(timezone.utc)
-
-        try:
-            with open(file_path, "rb") as f:
-                content = f.read()
-
-            # Decode strings / coordinate markers in MAVLink streams
-            text = content.decode("latin1", errors="ignore")
-            # Extract common MAVLink GPS_RAW_INT / GLOBAL_POSITION_INT signatures
-            matches = list(Path(file_path).name)
-        except Exception:
-            pass
-        return points
+        """Parses MAVLink telemetry stream log using GCSAnalyzer."""
+        pts, _, _, _ = GCSAnalyzer.parse_mavlink_tlog(file_path)
+        return pts
 
     def parse_events(self, file_path: Path) -> List[FlightEvent]:
+        ext = file_path.suffix.lower()
+        if ext == ".tlog":
+            _, events, _, _ = GCSAnalyzer.parse_mavlink_tlog(file_path)
+            return events
+        elif ext in [".waypoints", ".txt"]:
+            _, _, events, _ = GCSAnalyzer.parse_qgc_wpl(file_path)
+            return events
+        elif ext == ".plan":
+            _, _, events, _, _ = GCSAnalyzer.parse_qgc_plan(file_path)
+            return events
+
         events: List[FlightEvent] = []
         pts = self.parse_telemetry(file_path)
 
@@ -306,16 +327,66 @@ class ArduPilotPlugin(DroneForensicPlugin):
         return events
 
     def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
+        ext = file_path.suffix.lower()
+
+        if ext == ".tlog":
+            _, _, op_locs, tlog_meta = GCSAnalyzer.parse_mavlink_tlog(file_path)
+            meta: Dict[str, Any] = {
+                "platform": "ArduPilot (MAVLink Telemetry Stream)",
+                "evidence_file": file_path.name,
+                "architecture": "Pixhawk / STM32 Autopilot",
+                "ground_control_station": "Mission Planner / QGroundControl",
+                "gcs_telemetry_meta": tlog_meta
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
+        if ext in [".waypoints", ".txt"]:
+            plan, _, _, op_locs = GCSAnalyzer.parse_qgc_wpl(file_path)
+            meta = {
+                "platform": "ArduPilot (Mission Planner Waypoints)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "total_planned_distance_m": plan.total_planned_distance_m,
+                "planned_max_altitude_m": plan.planned_max_altitude_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
+        if ext == ".plan":
+            plan, _, _, op_locs, geofences = GCSAnalyzer.parse_qgc_plan(file_path)
+            meta = {
+                "platform": "ArduPilot / PX4 (QGroundControl Plan)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "geofences_count": len(geofences),
+                "total_planned_distance_m": plan.total_planned_distance_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return meta
+
         params: Dict[str, Any] = {}
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
-                    if line.startswith("PARM,"):
-                        parts = line.split(",")
+                    line_s = line.strip()
+                    if line_s.startswith("PARM,"):
+                        parts = line_s.split(",")
                         if len(parts) >= 3:
                             params[parts[1].strip()] = parts[2].strip()
-                        if len(params) > 25:
-                            break
+                    elif "," in line_s or "\t" in line_s or "=" in line_s:
+                        # Handle .param format: PARAM_NAME,value or PARAM_NAME=value
+                        delimiter = "," if "," in line_s else ("\t" if "\t" in line_s else "=")
+                        parts = line_s.split(delimiter, 1)
+                        if len(parts) == 2 and not parts[0].startswith("#"):
+                            params[parts[0].strip()] = parts[1].strip()
+                    if len(params) > 50:
+                        break
         except Exception:
             pass
 
@@ -326,3 +397,4 @@ class ArduPilotPlugin(DroneForensicPlugin):
             "parameters_extracted_sample": params,
             "supported_sensors": ["Barometer", "Dual IMU", "Compass", "RTK GPS"]
         }
+
