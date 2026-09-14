@@ -719,5 +719,8 @@ def get_default_core_presets() -> List[GeofenceZone]:
     core_ids = {
         "ZONE-AIRPORT-BOM",
         "ZONE-AIRDROME-VAJJ",
+        "ZONE-GOV-MANTRALAYA",
+        "ZONE-STRAT-BARC",
+        "ZONE-BUFFER-IITB",
     }
     return [GeofenceZone(**z) for z in REAL_WORLD_RESTRICTED_SPACES if z["zone_id"] in core_ids]

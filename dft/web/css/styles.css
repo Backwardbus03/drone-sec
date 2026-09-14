@@ -1,0 +1,218 @@
+/* Drone Forensic Toolkit (DFT) — Investigation Console Modern Design System */
+/* Light Theme & Frosted Glassmorphism Architecture */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  
+  --bg-canvas: #f8fafc;
+  --bg-surface: rgba(255, 255, 255, 0.75);
+  --bg-surface-elevated: rgba(255, 255, 255, 0.90);
+  --border-subtle: rgba(226, 232, 240, 0.8);
+  --border-glass: rgba(255, 255, 255, 0.85);
+  --border-focus: rgba(14, 165, 233, 0.5);
+  
+  --accent-sky: #0284c7;
+  --accent-emerald: #059669;
+  --accent-amber: #d97706;
+  --accent-rose: #e11d48;
+  --accent-indigo: #4f46e5;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-canvas);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.07) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Monospace utility for hashes, coordinates & timestamps */
+.font-mono, .hash-font {
+  font-family: var(--font-mono) !important;
+}
+
+/* Light Theme Frosted Glassmorphism Surfaces */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+  border-radius: 1rem;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.875rem;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(14, 165, 233, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -4px rgba(14, 165, 233, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(203, 213, 225, 0.85);
+  color: #0f172a;
+}
+.glass-input:focus {
+  border-color: #0284c7;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+}
+
+/* Leaflet Maps Styling & Responsive Sizing */
+#map, #geoPreviewMap, #gcsMap {
+  width: 100%;
+  border-radius: 0.875rem;
+  position: relative;
+  z-index: 10;
+  isolation: isolate;
+  background-color: #f1f5f9;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.05);
+}
+
+#map {
+  height: 380px;
+}
+
+#gcsMap {
+  height: 360px;
+}
+
+#geoPreviewMap {
+  height: 280px;
+  min-height: 280px;
+}
+
+@media (min-width: 768px) {
+  #map {
+    height: 520px;
+  }
+  #gcsMap {
+    height: 480px;
+  }
+  #geoPreviewMap {
+    height: 340px;
+    min-height: 340px;
+  }
+}
+
+.leaflet-container {
+  z-index: 10 !important;
+  position: relative !important;
+  isolation: isolate !important;
+  font-family: var(--font-sans) !important;
+}
+
+.leaflet-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-top, .leaflet-bottom {
+  z-index: 20 !important;
+}
+
+/* Custom Marker Pins */
+.custom-op-pin, .custom-takeoff-pin, .custom-landing-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Animations & Micro-Interactions */
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(14, 165, 233, 0.4); box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.2); }
+  50% { border-color: rgba(14, 165, 233, 0.9); box-shadow: 0 0 16px 2px rgba(14, 165, 233, 0.25); }
+}
+
+.wizard-active-panel {
+  animation: pulse-border 2.5s infinite;
+}
+
+@keyframes subtle-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.live-indicator-glow {
+  animation: subtle-glow 2s ease-in-out infinite;
+}
+
+/* Mobile Slide-Over Drawer */
+.mobile-drawer {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.mobile-drawer-backdrop {
+  transition: opacity 0.3s ease-out;
+}
+
+/* Smooth Tab Transitions */
+.tab-pane {
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Active navigation states */
+.nav-btn.active-tab {
+  background: rgba(14, 165, 233, 0.12) !important;
+  color: #0369a1 !important;
+  border-color: #0284c7 !important;
+  font-weight: 700 !important;
+}
+
+/* Custom Sleek Scrollbar for Light Theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.7);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.75);
+}
+
+/* Hide scrollbar for clean horizontal swipes on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Safe area padding for mobile bottom bar (iOS notch/home indicator) */
+.safe-bottom-padding {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* Touch-friendly active button press effect */
+.touch-press:active {
+  transform: scale(0.97);
+}

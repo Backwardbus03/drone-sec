@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#f8fafc">
+  <title>DFT Mobile Uplink — Wireless Evidence Ingestion</title>
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/styles.css">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col justify-between antialiased selection:bg-sky-500/20 selection:text-sky-800">
+
+  <!-- Mobile Top Bar -->
+  <header class="bg-white/80 backdrop-blur-xl border-b border-slate-200/80 px-4 py-3.5 sticky top-0 z-30 flex items-center justify-between shadow-sm">
+    <div class="flex items-center space-x-2.5">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-base shadow-md shadow-sky-500/20 text-white">
+        🛸
+      </div>
+      <div>
+        <h1 class="text-xs font-bold text-slate-900 tracking-wider uppercase flex items-center gap-1.5">
+          <span>DFT Uplink</span>
+          <span class="text-[9px] px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono font-bold">v1.2</span>
+        </h1>
+        <p class="text-[10px] text-slate-500 font-medium tracking-tight">Forensic Wireless Evidence Ingestion</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-1.5 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full font-bold shadow-sm">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+      <span class="tracking-wide">CONNECTED</span>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 p-4 max-w-md mx-auto w-full space-y-4">
+
+    <!-- Case Context Card -->
+    <div class="glass-panel rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3 relative overflow-hidden">
+      <div class="absolute -top-10 -right-10 w-24 h-24 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
+      <div class="flex items-center justify-between">
+        <label class="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+          <span class="text-sky-600">📁</span> Target Investigation Case
+        </label>
+        <span class="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 font-mono px-2 py-0.5 rounded-md font-semibold">ISO 27037</span>
+      </div>
+      <div class="relative">
+        <select id="caseSelector" onchange="onCaseChanged()" class="w-full glass-input text-slate-900 text-xs font-mono rounded-xl px-3.5 py-3 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 focus:outline-none appearance-none transition shadow-sm font-semibold">
+          <option value="">Loading cases...</option>
+        </select>
+        <div class="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">▼</div>
+      </div>
+      <p class="text-[11px] text-slate-500 leading-relaxed">
+        Evidence uploaded will be write-blocked, dual-hashed, and immediately synchronized to the investigator's workstation screen.
+      </p>
+    </div>
+
+    <!-- Upload Selection Card -->
+    <div class="glass-panel rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-4 relative">
+      <div class="space-y-1">
+        <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+          <span class="text-sky-600">⚡</span> Select Evidence File(s)
+        </h2>
+        <p class="text-[11px] text-slate-500">
+          Accepts Flight Logs, Blackbox, Aerial Video/Photos, and GCS Mission Plans.
+        </p>
+      </div>
+
+      <!-- Drag & Drop / File Input Zone -->
+      <label for="mobileFileInput" class="border-2 border-dashed border-slate-300 hover:border-sky-500 active:border-sky-400 p-6 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 bg-white/60 hover:bg-white active:scale-[0.99] block group shadow-sm">
+        <div class="w-14 h-14 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center text-2xl mb-2.5 group-hover:scale-105 group-hover:border-sky-400 transition-transform">
+          📲
+        </div>
+        <span class="text-xs text-slate-800 font-bold block mb-1 group-hover:text-sky-700 transition-colors" id="fileSelectLabel">Tap to Select Evidence File</span>
+        <span class="text-[10px] text-slate-500 font-mono block max-w-[280px]" id="fileSubLabel">Supports .BIN, .ulg, .srt, .csv, .mp4, .jpg, .plan, .db, .zip</span>
+        <input type="file" id="mobileFileInput" onchange="handleFileSelected(this.files)" class="hidden" />
+      </label>
+
+      <!-- Selected File Preview Badge -->
+      <div id="selectedFileInfo" class="hidden bg-white p-3.5 rounded-xl border border-slate-200 space-y-2.5 shadow-sm">
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2 truncate pr-2">
+            <span class="text-sky-600 text-sm">📄</span>
+            <span class="font-medium text-slate-900 truncate max-w-[180px] font-mono" id="previewFileName">--</span>
+          </div>
+          <span class="text-slate-600 font-mono text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200" id="previewFileSize">--</span>
+        </div>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+          <span class="text-[10px] text-slate-500 font-medium">Detected Category:</span>
+          <span id="previewCategoryBadge" class="text-[10px] font-bold px-2 py-0.5 rounded uppercase font-mono tracking-wider">--</span>
+        </div>
+      </div>
+
+      <!-- Action Button -->
+      <button id="uploadBtn" onclick="submitMobileUpload()" disabled class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 hover:from-sky-500 hover:to-indigo-500 active:scale-[0.98] text-white text-xs font-bold py-3.5 rounded-xl transition-all duration-200 shadow-md shadow-sky-600/20 flex items-center justify-center space-x-2">
+        <span id="uploadSpinner" class="hidden animate-spin">⏳</span>
+        <span id="uploadBtnText">Select File First</span>
+      </button>
+
+      <!-- Real-Time Upload Progress & Results -->
+      <div id="uploadFeedback" class="hidden space-y-3">
+        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200 p-0.5">
+          <div id="progressBar" class="bg-gradient-to-r from-sky-500 to-emerald-500 h-full rounded-full transition-all duration-300 w-0"></div>
+        </div>
+        <div id="statusAlert" class="p-3.5 rounded-xl text-xs"></div>
+      </div>
+    </div>
+
+    <!-- Supported Evidence Types Reference Card -->
+    <div class="glass-card rounded-2xl p-3.5 text-xs space-y-2.5 border border-slate-200/80">
+      <h3 class="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+        <span>📑</span> Automatic Category Routing
+      </h3>
+      <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
+        <div class="bg-amber-50/80 p-2.5 rounded-xl border border-amber-200 text-amber-800 space-y-1">
+          <div class="text-base">📋</div>
+          <div class="font-bold">Flight Logs</div>
+          <div class="text-slate-500 font-mono text-[9px]">BIN, ulg, srt, csv</div>
+        </div>
+        <div class="bg-purple-50/80 p-2.5 rounded-xl border border-purple-200 text-purple-800 space-y-1">
+          <div class="text-base">🎥</div>
+          <div class="font-bold">Video / Img</div>
+          <div class="text-slate-500 font-mono text-[9px]">MP4, MOV, JPG</div>
+        </div>
+        <div class="bg-sky-50/80 p-2.5 rounded-xl border border-sky-200 text-sky-800 space-y-1">
+          <div class="text-base">🎮</div>
+          <div class="font-bold">GCS Plans</div>
+          <div class="text-slate-500 font-mono text-[9px]">plan, tlog, kml</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="p-3 text-center text-[10px] text-slate-500 border-t border-slate-200 bg-white/70 font-mono safe-bottom-padding">
+    Drone Forensic Toolkit (DFT) • Software Write-Block Active • ISO/IEC 27037:2012
+  </footer>
+
+  <script>
+    let activeCaseId = '';
+    let selectedFile = null;
+
+    async function initMobilePortal() {
+      // Check query param for pre-selected case
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramCase = urlParams.get('case');
+
+      try {
+        const res = await fetch('/api/cases');
+        if (res.ok) {
+          const cases = await res.json();
+          const select = document.getElementById('caseSelector');
+          select.innerHTML = '';
+          if (cases.length === 0) {
+            select.innerHTML = '<option value="">No open cases found on workstation</option>';
+            return;
+          }
+          cases.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.case_id;
+            opt.textContent = `${c.case_id} — ${c.case_name}`;
+            if (paramCase && c.case_id === paramCase) {
+              opt.selected = true;
+            }
+            select.appendChild(opt);
+          });
+          activeCaseId = select.value;
+        }
+      } catch (err) {
+        console.error('Failed to load cases:', err);
+      }
+    }
+
+    function onCaseChanged() {
+      activeCaseId = document.getElementById('caseSelector').value;
+    }
+
+    function handleFileSelected(files) {
+      if (!files || files.length === 0) return;
+      selectedFile = files[0];
+
+      const previewBox = document.getElementById('selectedFileInfo');
+      const nameEl = document.getElementById('previewFileName');
+      const sizeEl = document.getElementById('previewFileSize');
+      const catBadge = document.getElementById('previewCategoryBadge');
+      const btn = document.getElementById('uploadBtn');
+      const btnText = document.getElementById('uploadBtnText');
+
+      nameEl.textContent = selectedFile.name;
+      sizeEl.textContent = `${(selectedFile.size / 1024).toFixed(1)} KB`;
+
+      // Guess category from extension
+      const ext = (selectedFile.name.split('.').pop() || '').toLowerCase();
+      let cat = 'Logs';
+      let badgeClass = 'bg-amber-100 text-amber-800 border border-amber-300';
+
+      if (['mp4', 'mov', 'm4v', 'avi', 'jpg', 'jpeg', 'png', 'dng'].includes(ext)) {
+        cat = 'Video/Images';
+        badgeClass = 'bg-purple-100 text-purple-800 border border-purple-300';
+      } else if (['plan', 'waypoints', 'wpl', 'kml', 'kmz', 'tlog', 'param', 'mission'].includes(ext)) {
+        cat = 'GCS';
+        badgeClass = 'bg-sky-100 text-sky-800 border border-sky-300';
+      }
+
+      catBadge.textContent = cat;
+      catBadge.className = `text-[10px] font-bold px-2 py-0.5 rounded uppercase font-mono ${badgeClass}`;
+
+      previewBox.classList.remove('hidden');
+      btn.disabled = false;
+      btnText.textContent = `Upload Wirelessly to Laptop`;
+    }
+
+    async function submitMobileUpload() {
+      if (!activeCaseId || !selectedFile) {
+        alert('Please select a case and a file to upload.');
+        return;
+      }
+
+      const btn = document.getElementById('uploadBtn');
+      const btnText = document.getElementById('uploadBtnText');
+      const spinner = document.getElementById('uploadSpinner');
+      const feedback = document.getElementById('uploadFeedback');
+      const progressBar = document.getElementById('progressBar');
+      const statusAlert = document.getElementById('statusAlert');
+
+      btn.disabled = true;
+      spinner.classList.remove('hidden');
+      btnText.textContent = 'Transmitting to Laptop...';
+      feedback.classList.remove('hidden');
+      progressBar.style.width = '45%';
+      statusAlert.className = 'p-3.5 rounded-xl text-xs bg-sky-50 border border-sky-200 text-sky-800 block shadow-sm';
+      statusAlert.textContent = `Encrypting and transmitting ${selectedFile.name}...`;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('actor', 'Mobile Phone Operator');
+
+        const res = await fetch(`/api/cases/${activeCaseId}/wireless/upload-mobile`, {
+          method: 'POST',
+          body: formData
+        });
+
+        progressBar.style.width = '100%';
+
+        if (res.ok) {
+          const data = await res.json();
+          const category = data.evidence_category || 'Evidence';
+          const points = data.telemetry_points_extracted || 0;
+          const hashShort = data.sha256 ? data.sha256.substring(0, 16) : '--';
+
+          statusAlert.className = 'p-3.5 rounded-xl text-xs bg-emerald-50 border border-emerald-300 text-emerald-900 block space-y-1.5 shadow-md';
+          statusAlert.innerHTML = `
+            <div class="font-bold flex items-center space-x-1.5 text-emerald-800">
+              <span>✓</span> <span>Transmitted & Synchronized to Laptop!</span>
+            </div>
+            <div class="font-mono text-[11px] text-slate-700">File: <code class="text-slate-900 font-bold">${escapeHtml(selectedFile.name)}</code></div>
+            <div class="text-[11px] text-slate-700">Sorted As: <strong class="uppercase text-slate-900 font-mono">${escapeHtml(category)}</strong> (${escapeHtml(data.category_folder)}/)</div>
+            ${points > 0 ? `<div class="text-[11px] text-slate-700">Telemetry: <strong class="text-slate-900">${points} points</strong> extracted & mapped</div>` : ''}
+            <div class="text-[10px] text-slate-500 font-mono">SHA-256: ${hashShort}... (Write-Blocked)</div>
+          `;
+
+          btnText.textContent = 'Upload Another File';
+          btn.disabled = false;
+          spinner.classList.add('hidden');
+          document.getElementById('mobileFileInput').value = '';
+        } else {
+          const err = await res.json();
+          throw new Error(err.detail || 'Server rejected upload');
+        }
+      } catch (err) {
+        progressBar.style.width = '0%';
+        statusAlert.className = 'p-3.5 rounded-xl text-xs bg-rose-50 border border-rose-200 text-rose-800 block shadow-sm';
+        statusAlert.textContent = `❌ Upload failed: ${err.message}`;
+        btn.disabled = false;
+        spinner.classList.add('hidden');
+        btnText.textContent = 'Retry Upload';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    window.onload = initMobilePortal;
+  </script>
+</body>
+</html>

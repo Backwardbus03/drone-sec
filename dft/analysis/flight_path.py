@@ -20,12 +20,17 @@ class FlightPathAnalyzer:
         violations_count: int = 0,
         anomalies_count: int = 0,
         operator_location: Any = None,
-        gcs_detected: Optional[str] = None
+        gcs_detected: Optional[str] = None,
+        mobile_companion_apps: Optional[List[str]] = None,
+        wireless_sessions_count: int = 0,
+        evidence_counts: Optional[Dict[str, int]] = None
     ) -> FlightSummary:
         """Computes end-to-end flight performance and spatial statistics."""
         actual_events_count = len(events) if events is not None else events_count
         arm_time = None
         disarm_time = None
+        mob_apps = mobile_companion_apps or []
+        ev_counts = evidence_counts or {}
         if events:
             for ev in events:
                 if ev.event_type == "ARM":
@@ -52,7 +57,10 @@ class FlightPathAnalyzer:
                 violations_count=violations_count,
                 anomalies_count=anomalies_count,
                 operator_location=operator_location,
-                gcs_detected=gcs_detected
+                gcs_detected=gcs_detected,
+                mobile_companion_apps=mob_apps,
+                wireless_sessions_count=wireless_sessions_count,
+                evidence_counts=ev_counts
             )
 
         total_distance = 0.0
@@ -96,7 +104,10 @@ class FlightPathAnalyzer:
             violations_count=violations_count,
             anomalies_count=anomalies_count,
             operator_location=operator_location,
-            gcs_detected=gcs_detected
+            gcs_detected=gcs_detected,
+            mobile_companion_apps=mob_apps,
+            wireless_sessions_count=wireless_sessions_count,
+            evidence_counts=ev_counts
         )
 
     @staticmethod

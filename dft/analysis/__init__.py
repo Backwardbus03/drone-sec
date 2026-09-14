@@ -7,6 +7,7 @@ from dft.analysis.timeline import TimelineReconstructor
 from dft.analysis.anomaly import AnomalyDetector
 from dft.analysis.correlator import CrossSourceCorrelator
 from dft.analysis.gcs import GCSAnalyzer
+from dft.analysis.mobile import MobileCompanionAnalyzer
 
 __all__ = [
     "GeofenceEngine",
@@ -15,6 +16,8 @@ __all__ = [
     "AnomalyDetector",
     "CrossSourceCorrelator",
     "GCSAnalyzer",
+    "MobileCompanionAnalyzer",
     "haversine_distance_meters",
     "point_in_polygon"
 ]
+

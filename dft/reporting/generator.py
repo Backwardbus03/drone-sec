@@ -187,6 +187,79 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </div>
 {% endif %}
 
+{% if (mobile_analysis and mobile_analysis.artifacts) or wireless_sessions %}
+<div class="card" style="border-left: 4px solid #8b5cf6;">
+  <h2 class="section-title">Mobile Companion Applications & Wireless Acquisition Forensics</h2>
+  <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">
+    Examines suspect mobile companion software (DJI Fly, DJI GO 4, Litchi, QGroundControl Mobile, 3DR Tower, Parrot FreeFlight, SpeedyBee, EZ-GUI, Autel Explorer) and wireless acquisition sessions (Wi-Fi AP FTP, MAVLink UDP, Wireless ADB) recovered in accordance with ISO/IEC 27037:2012.
+  </p>
+
+  {% if mobile_analysis and mobile_analysis.artifacts %}
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 15px;">
+    {% for art in mobile_analysis.artifacts %}
+    <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; background: #fafafa;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-weight: 700; color: #1e293b; font-size: 14px;">{{ art.app_name }}</span>
+        <span class="badge badge-info">{{ art.target_platform }}</span>
+      </div>
+      <p style="font-size: 11px; color: #64748b; font-family: monospace;">Pkg: {{ art.package_id or 'com.uav.companion' }}</p>
+      {% if art.pilot_account %}
+      <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; font-size: 12px;">
+        <p><strong>Pilot:</strong> {{ art.pilot_account.pilot_name or art.pilot_account.callsign or art.pilot_account.email or 'Registered User' }}</p>
+        {% if art.pilot_account.email %}<p><strong>Email:</strong> {{ art.pilot_account.email }}</p>{% endif %}
+      </div>
+      {% endif %}
+      {% if art.paired_hardware %}
+      <div style="margin-top: 6px; font-size: 12px;">
+        {% if art.paired_hardware.aircraft_sn %}<p><strong>Paired Aircraft SN:</strong> <span class="hash-box">{{ art.paired_hardware.aircraft_sn }}</span></p>{% endif %}
+        {% if art.paired_hardware.controller_sn %}<p><strong>RC SN:</strong> {{ art.paired_hardware.controller_sn }}</p>{% endif %}
+      </div>
+      {% endif %}
+      {% if art.operator_locations %}
+      <div style="margin-top: 6px; font-size: 12px; color: #059669;">
+        <strong>Phone GPS:</strong> {{ art.operator_locations[0].latitude|round(6) }}, {{ art.operator_locations[0].longitude|round(6) }}
+      </div>
+      {% endif %}
+      <div style="margin-top: 8px; font-size: 11px; color: #64748b;">
+        Logs: {{ art.flight_logs|length }} | Missions: {{ art.mission_plans|length }} | Media: {{ art.cached_media|length }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if wireless_sessions %}
+  <h3 style="font-size: 14px; font-weight: 600; margin-top: 15px; margin-bottom: 8px; color: #334155;">Wireless Acquisition Transfer Sessions</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Session ID</th>
+        <th>Protocol</th>
+        <th>Source Endpoint</th>
+        <th>Target Device</th>
+        <th>Transferred</th>
+        <th>Files Acquired</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ws in wireless_sessions %}
+      <tr>
+        <td><strong>{{ ws.session_id }}</strong></td>
+        <td><span class="badge badge-info">{{ ws.protocol }}</span></td>
+        <td><code>{{ ws.source_ip }}</code></td>
+        <td>{{ ws.target_device }}</td>
+        <td>{{ ws.bytes_transferred }} B</td>
+        <td>{{ ws.files_acquired|join(', ') }}</td>
+        <td><span class="badge badge-success">{{ ws.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if media_items %}
 <div class="card" style="border-left: 4px solid #0284c7;">
   <h2 class="section-title">Aerial Visual Evidence & Synchronized Media Captures</h2>
@@ -264,11 +337,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <div class="card">
   <h2 class="section-title">Itemized Evidence & Cryptographic Hashes</h2>
-  <p style="font-size: 13px; color: #64748b;">Every evidence item has been hashed simultaneously with SHA-256 and SHA-3-256 under software write-inhibition.</p>
+  <p style="font-size: 13px; color: #64748b;">Every evidence item has been hashed simultaneously with SHA-256 and SHA-3-256 under software write-inhibition and sorted into designated categories.</p>
+  
+  <div style="display: flex; gap: 10px; margin: 12px 0 16px 0; font-size: 12px;">
+    <div style="padding: 6px 14px; background: #0f172a; border-radius: 6px; border: 1px solid #334155; color: #f8fafc;">
+      <strong>Total Items:</strong> {{ evidence_items|length }}
+    </div>
+    <div style="padding: 6px 14px; background: #451a03; border-radius: 6px; border: 1px solid #78350f; color: #fcd34d;">
+      <strong>📋 Logs:</strong> {{ evidence_items|selectattr('evidence_category', 'equalto', 'LOGS')|list|length }}
+    </div>
+    <div style="padding: 6px 14px; background: #581c87; border-radius: 6px; border: 1px solid #6b21a8; color: #d8b4fe;">
+      <strong>🎥 Video/Images:</strong> {{ evidence_items|selectattr('evidence_category', 'equalto', 'VIDEO_IMAGES')|list|length }}
+    </div>
+    <div style="padding: 6px 14px; background: #082f49; border-radius: 6px; border: 1px solid #0369a1; color: #7dd3fc;">
+      <strong>🎮 GCS:</strong> {{ evidence_items|selectattr('evidence_category', 'equalto', 'GCS')|list|length }}
+    </div>
+  </div>
+
   <table>
     <thead>
       <tr>
         <th>Item ID</th>
+        <th>Category</th>
         <th>File Name</th>
         <th>Size</th>
         <th>Acquisition Type</th>
@@ -279,6 +369,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       {% for ev in evidence_items %}
       <tr>
         <td><strong>{{ ev.item_id }}</strong></td>
+        <td>
+          {% if ev.evidence_category == 'VIDEO_IMAGES' %}
+            <span class="badge" style="background: #581c87; color: #d8b4fe;">🎥 Video/Images</span>
+          {% elif ev.evidence_category == 'GCS' %}
+            <span class="badge" style="background: #082f49; color: #7dd3fc;">🎮 GCS</span>
+          {% else %}
+            <span class="badge" style="background: #451a03; color: #fcd34d;">📋 Logs</span>
+          {% endif %}
+        </td>
         <td>{{ ev.file_name }}</td>
         <td>{{ (ev.file_size_bytes / 1024)|round(1) }} KB</td>
         <td><span class="badge badge-info">{{ ev.acquisition_type }}</span></td>
@@ -441,7 +540,9 @@ class ForensicReportGenerator:
         timeline: List[Dict[str, Any]],
         audit_logs: List[AuditLogEntry],
         gcs_analysis: Any = None,
-        media_items: Optional[List[Any]] = None
+        media_items: Optional[List[Any]] = None,
+        mobile_analysis: Any = None,
+        wireless_sessions: Optional[List[Any]] = None
     ) -> str:
         """Generates comprehensive court-admissible HTML report."""
         template = Template(HTML_TEMPLATE)
@@ -455,6 +556,8 @@ class ForensicReportGenerator:
             audit_logs=audit_logs,
             gcs_analysis=gcs_analysis,
             media_items=media_items or [],
+            mobile_analysis=mobile_analysis,
+            wireless_sessions=wireless_sessions or [],
             report_generated_utc=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         )
 
@@ -468,19 +571,37 @@ class ForensicReportGenerator:
         timeline: List[Dict[str, Any]],
         audit_logs: List[AuditLogEntry],
         gcs_analysis: Any = None,
-        media_items: Optional[List[Any]] = None
+        media_items: Optional[List[Any]] = None,
+        mobile_analysis: Any = None,
+        wireless_sessions: Optional[List[Any]] = None
     ) -> str:
-        """Generates structured JSON representation for machine ingestion."""
+        logs_items = [e.model_dump() for e in evidence_items if getattr(e, "evidence_category", "LOGS") == "LOGS"]
+        video_items = [e.model_dump() for e in evidence_items if getattr(e, "evidence_category", "LOGS") == "VIDEO_IMAGES"]
+        gcs_items = [e.model_dump() for e in evidence_items if getattr(e, "evidence_category", "LOGS") == "GCS"]
+
         payload = {
             "case": case.model_dump(),
             "flight_summary": summary.model_dump(),
             "evidence_items": [e.model_dump() for e in evidence_items],
+            "evidence_counts": {
+                "logs": len(logs_items),
+                "video_images": len(video_items),
+                "gcs": len(gcs_items),
+                "total": len(evidence_items)
+            },
+            "evidence_by_category": {
+                "logs": logs_items,
+                "video_images": video_items,
+                "gcs": gcs_items
+            },
             "geofence_violations": [v.model_dump() for v in geofence_violations],
             "anomalies": [a.model_dump() for a in anomalies],
             "timeline": timeline,
             "chain_of_custody": [log.model_dump() for log in audit_logs],
             "ground_control_station": gcs_analysis.model_dump() if (gcs_analysis and hasattr(gcs_analysis, "model_dump")) else gcs_analysis,
             "gcs_analysis": gcs_analysis.model_dump() if (gcs_analysis and hasattr(gcs_analysis, "model_dump")) else gcs_analysis,
+            "mobile_companion_analysis": mobile_analysis.model_dump() if (mobile_analysis and hasattr(mobile_analysis, "model_dump")) else mobile_analysis,
+            "wireless_sessions": [s.model_dump() if hasattr(s, "model_dump") else s for s in (wireless_sessions or [])],
             "media_items": [m.model_dump() if hasattr(m, "model_dump") else m for m in (media_items or [])],
             "generated_at_utc": datetime.now(timezone.utc).isoformat()
         }

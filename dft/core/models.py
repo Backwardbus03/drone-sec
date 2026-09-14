@@ -32,9 +32,10 @@ class EvidenceItem(BaseModel):
     source_path: str
     file_size_bytes: int
     hashes: HashManifest
-    acquisition_type: Literal["PHYSICAL_IMAGE", "LOGICAL_EXTRACT", "NETWORK_PCAP", "MANUAL_IMPORT", "MEDIA_IMPORT"]
+    acquisition_type: Literal["PHYSICAL_IMAGE", "LOGICAL_EXTRACT", "NETWORK_PCAP", "MANUAL_IMPORT", "MEDIA_IMPORT", "MOBILE_BACKUP", "WIRELESS_TRANSFER"]
     write_block_verified: bool = True
     drone_platform: Optional[str] = "UNKNOWN"
+    evidence_category: Literal["LOGS", "VIDEO_IMAGES", "GCS"] = "LOGS"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -234,4 +235,47 @@ class FlightSummary(BaseModel):
     anomalies_count: int
     operator_location: Optional[OperatorLocation] = None
     gcs_detected: Optional[str] = None
+    mobile_companion_apps: List[str] = Field(default_factory=list)
+    wireless_sessions_count: int = 0
+    evidence_counts: Dict[str, int] = Field(default_factory=dict)
+
+
+class MobileAppArtifact(BaseModel):
+    app_id: str
+    app_name: str
+    package_id: Optional[str] = None
+    target_platform: str  # "DJI", "ArduPilot", "PX4", "Parrot", "Betaflight", "Autel", etc.
+    pilot_account: Optional[Dict[str, Any]] = None  # email, pilot_name, user_id, phone, token
+    paired_hardware: Optional[Dict[str, Any]] = None  # drone_model, aircraft_sn, controller_sn, camera_sn, bluetooth_mac
+    operator_locations: List[OperatorLocation] = Field(default_factory=list)
+    flight_logs: List[str] = Field(default_factory=list)
+    mission_plans: List[str] = Field(default_factory=list)
+    config_dumps: Dict[str, Any] = Field(default_factory=dict)
+    cached_media: List[str] = Field(default_factory=list)
+    raw_details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileCompanionAnalysisResult(BaseModel):
+    apps_detected: List[str] = Field(default_factory=list)
+    platforms_involved: List[str] = Field(default_factory=list)
+    artifacts: List[MobileAppArtifact] = Field(default_factory=list)
+    total_flight_records: int = 0
+    total_waypoints_recovered: int = 0
+    operator_locations: List[OperatorLocation] = Field(default_factory=list)
+    extracted_telemetry_points_count: int = 0
+
+
+class WirelessTransferSession(BaseModel):
+    session_id: str
+    timestamp_utc: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    protocol: Literal["WIFI_FTP", "MAVLINK_UDP", "WIRELESS_ADB", "LOCAL_HTTP_PORTAL"]
+    source_ip: str
+    target_device: str
+    drone_platform: Optional[str] = "UNKNOWN"
+    ssid: Optional[str] = None
+    bytes_transferred: int = 0
+    files_acquired: List[str] = Field(default_factory=list)
+    hash_manifest: Optional[HashManifest] = None
+    status: Literal["COMPLETED", "FAILED", "IN_PROGRESS"] = "COMPLETED"
+    details: str = ""
 

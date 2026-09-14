@@ -2,168 +2,256 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+<meta name="theme-color" content="#f8fafc">
 <title>Drone Forensic Toolkit (DFT) — Investigation Console</title>
 <!-- Tailwind CSS CDN -->
 <script src="https://cdn.tailwindcss.com"></script>
 <!-- Leaflet CSS & JS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>
-  #map, #geoPreviewMap, #gcsMap {
-    height: 500px;
-    width: 100%;
-    border-radius: 0.75rem;
-    position: relative;
-    z-index: 10;
-    isolation: isolate;
-  }
-  #gcsMap {
-    height: 480px;
-  }
-  .leaflet-container {
-    z-index: 10 !important;
-    position: relative !important;
-    isolation: isolate !important;
-  }
-  .leaflet-pane {
-    z-index: 1 !important;
-  }
-  .leaflet-top, .leaflet-bottom {
-    z-index: 20 !important;
-  }
-  .hash-font { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/styles.css" />
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans selection:bg-sky-500/20 selection:text-sky-800">
 
 <!-- Top Navigation -->
-<header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-[100] relative">
-  <div class="flex items-center space-x-3">
-    <div class="bg-sky-500 text-slate-950 p-2 rounded-lg font-black text-xl tracking-wider">DFT</div>
-    <div>
-      <h1 class="text-lg font-bold text-white tracking-wide">DRONE FORENSIC TOOLKIT</h1>
-      <p class="text-xs text-sky-400 font-medium">ISO/IEC 27037:2012 & 27042:2015 Digital Forensics</p>
+<header class="bg-white/80 backdrop-blur-xl border-b border-slate-200/80 px-3 sm:px-6 py-3 sticky top-0 z-[100] shadow-sm">
+  <div class="flex items-center justify-between">
+    <!-- Left: Mobile Menu Toggle & Brand Title -->
+    <div class="flex items-center space-x-2.5 sm:space-x-3">
+      <!-- Mobile Drawer Hamburger Button -->
+      <button onclick="toggleMobileDrawer()" aria-label="Open Navigation Menu" class="md:hidden p-2 rounded-lg bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200 transition touch-press border border-slate-200">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <div class="bg-gradient-to-br from-sky-500 to-indigo-600 text-white px-2.5 py-1.5 rounded-lg font-black text-lg sm:text-xl tracking-wider shadow-md shadow-sky-500/20">DFT</div>
+      <div>
+        <h1 class="text-sm sm:text-lg font-bold text-slate-900 tracking-wide flex items-center space-x-1.5">
+          <span>DRONE FORENSIC TOOLKIT</span>
+        </h1>
+        <p class="hidden sm:block text-[10px] sm:text-xs text-sky-700 font-medium">ISO/IEC 27037:2012 & 27042:2015 Digital Forensics</p>
+      </div>
     </div>
-  </div>
 
-  <div class="flex items-center space-x-4">
-    <div class="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-      <span class="text-xs text-slate-400 font-medium">ACTIVE CASE:</span>
-      <select id="caseSelector" onchange="onCaseChange()" class="bg-slate-900 text-sky-300 text-sm font-semibold rounded px-2 py-1 outline-none border border-slate-700">
-        <option value="">-- No Case Selected --</option>
-      </select>
-    </div>
+    <!-- Center/Right: Actions & Case Controls -->
+    <div class="flex items-center space-x-2 sm:space-x-3">
+      <!-- Active Case Selector (Desktop & Tablet) -->
+      <div class="hidden sm:flex items-center space-x-2 bg-white/90 px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">
+        <span class="text-[10px] sm:text-xs text-slate-500 font-semibold whitespace-nowrap">ACTIVE CASE:</span>
+        <select id="caseSelector" onchange="onCaseChange(this)" class="bg-slate-50 text-sky-800 text-xs sm:text-sm font-semibold rounded px-2 py-1 outline-none border border-slate-200 max-w-[150px] md:max-w-xs truncate cursor-pointer focus:border-sky-500">
+          <option value="">-- No Case Selected --</option>
+        </select>
+      </div>
 
-    <button onclick="openNewCaseModal()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow flex items-center space-x-1">
-      <span>+ New Case</span>
-    </button>
+      <button onclick="openNewCaseModal()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg transition shadow-md shadow-sky-600/20 flex items-center space-x-1 touch-press">
+        <span>+</span> <span class="hidden sm:inline">New Case</span><span class="sm:hidden">Case</span>
+      </button>
 
-    <div id="cocBadge" class="hidden items-center space-x-1.5 bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs px-2.5 py-1.5 rounded-lg font-medium">
-      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-      <span>Chain-of-Custody Verified</span>
+      <button onclick="startIngestionWorkflow()" class="hidden sm:flex bg-white hover:bg-slate-50 text-sky-700 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition shadow-sm flex items-center space-x-1 touch-press">
+        <span>⚡ Ingestion Flow</span>
+      </button>
+
+      <div id="syncIndicator" class="hidden md:flex items-center space-x-1.5 bg-emerald-50/90 border border-emerald-200 text-[11px] text-emerald-700 px-2.5 py-1.5 rounded-lg font-medium shadow-sm">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Live Sync</span>
+      </div>
+
+      <div id="cocBadge" class="hidden items-center space-x-1.5 bg-emerald-50/90 text-emerald-700 border border-emerald-300 text-xs px-2.5 py-1.5 rounded-lg font-semibold shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span class="hidden lg:inline">Chain-of-Custody Verified</span>
+        <span class="lg:hidden">Verified</span>
+      </div>
     </div>
   </div>
 </header>
 
-<!-- Main Container -->
-<main class="flex-1 flex overflow-hidden">
-  <!-- Left Navigation Bar -->
-  <aside class="w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col justify-between">
+<!-- Mobile Slide-Over Navigation Drawer Backdrop -->
+<div id="mobileDrawerBackdrop" onclick="closeMobileDrawer()" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 transition-opacity opacity-0 md:hidden"></div>
+
+<!-- Mobile Slide-Over Navigation Drawer -->
+<aside id="mobileDrawer" class="fixed inset-y-0 left-0 w-72 sm:w-80 bg-white/95 backdrop-blur-2xl border-r border-slate-200 z-50 transform -translate-x-full transition-transform duration-300 ease-in-out p-4 flex flex-col justify-between md:hidden shadow-2xl overflow-y-auto">
+  <div>
+    <div class="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+      <div class="flex items-center space-x-2">
+        <div class="bg-gradient-to-br from-sky-500 to-indigo-600 text-white px-2 py-0.5 rounded font-black text-sm">DFT</div>
+        <span class="font-bold text-sm text-slate-900">Investigation Console</span>
+      </div>
+      <button onclick="closeMobileDrawer()" class="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Mobile Case Selector Card in Drawer -->
+    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 mb-4 space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] text-slate-500 font-semibold uppercase">Active Case</span>
+        <span class="text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-1.5 py-0.5 rounded font-mono font-medium">ISO 27037</span>
+      </div>
+      <select id="mobileCaseSelector" onchange="onCaseChange(this)" class="w-full bg-white text-sky-800 text-xs font-semibold rounded-lg px-2.5 py-2 outline-none border border-slate-200">
+        <option value="">-- No Case Selected --</option>
+      </select>
+      <div class="flex items-center space-x-2 pt-1">
+        <button onclick="openNewCaseModal(); closeMobileDrawer();" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-semibold py-1.5 rounded-lg transition text-center">
+          + New Case
+        </button>
+        <button onclick="startIngestionWorkflow(); closeMobileDrawer();" class="flex-1 bg-white hover:bg-slate-100 text-sky-700 text-[11px] font-semibold py-1.5 rounded-lg border border-slate-200 transition text-center">
+          ⚡ Ingest Flow
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Navigation Links -->
     <nav class="space-y-1">
-      <button onclick="switchTab('mapTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition active-tab bg-slate-800 text-sky-400">
+      <button onclick="switchTab('mapTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition active-tab bg-sky-50 text-sky-700">
         <span>🛰️</span> <span>Flight Trajectory</span>
       </button>
-      <button onclick="switchTab('geofenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('geofenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>🛡️</span> <span>Geofence Manager</span>
       </button>
-      <button onclick="switchTab('evidenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('evidenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>📦</span> <span>Evidence & Hashes</span>
       </button>
-      <button onclick="switchTab('timelineTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('timelineTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>⏱️</span> <span>Event Timeline</span>
       </button>
-      <button onclick="switchTab('anomaliesTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('anomaliesTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>⚠️</span> <span>Anomaly Detection</span>
       </button>
-      <button onclick="switchTab('auditTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('auditTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>📜</span> <span>Chain of Custody</span>
       </button>
-      <button onclick="switchTab('reportsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('reportsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>📑</span> <span>Court Reports</span>
       </button>
-      <button onclick="switchTab('gcsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition">
+      <button onclick="switchTab('gcsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>🎮</span> <span>GCS & Operator</span>
+      </button>
+      <button onclick="switchTab('mobileTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>📱</span> <span>Mobile & Wireless</span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600 mt-4">
+    <div class="flex items-center justify-between text-slate-800 font-semibold mb-1">
+      <span>Write-Block Engine</span>
+      <span class="text-emerald-600 font-mono font-bold">ACTIVE</span>
+    </div>
+    <p class="text-[11px] text-slate-500">ISO 27037 software read-only verification engaged.</p>
+  </div>
+</aside>
+
+<!-- Main Container -->
+<main class="flex-1 flex overflow-hidden">
+  <!-- Desktop Left Navigation Bar -->
+  <aside class="hidden md:flex w-64 bg-white/75 backdrop-blur-xl border-r border-slate-200/80 p-4 flex-col justify-between shrink-0 shadow-sm">
+    <nav class="space-y-1">
+      <button onclick="switchTab('mapTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition active-tab bg-sky-50 text-sky-700">
+        <span>🛰️</span> <span>Flight Trajectory</span>
+      </button>
+      <button onclick="switchTab('geofenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>🛡️</span> <span>Geofence Manager</span>
+      </button>
+      <button onclick="switchTab('evidenceTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>📦</span> <span>Evidence & Hashes</span>
+      </button>
+      <button onclick="switchTab('timelineTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>⏱️</span> <span>Event Timeline</span>
+      </button>
+      <button onclick="switchTab('anomaliesTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>⚠️</span> <span>Anomaly Detection</span>
+      </button>
+      <button onclick="switchTab('auditTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>📜</span> <span>Chain of Custody</span>
+      </button>
+      <button onclick="switchTab('reportsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>📑</span> <span>Court Reports</span>
+      </button>
+      <button onclick="switchTab('gcsTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>🎮</span> <span>GCS & Operator</span>
+      </button>
+      <button onclick="switchTab('mobileTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>📱</span> <span>Mobile & Wireless</span>
       </button>
     </nav>
 
-    <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400">
-      <div class="flex items-center justify-between text-slate-300 font-semibold mb-1">
+    <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs text-slate-600">
+      <div class="flex items-center justify-between text-slate-800 font-semibold mb-1">
         <span>Write-Block Engine</span>
-        <span class="text-emerald-400 font-mono">ACTIVE</span>
+        <span class="text-emerald-600 font-mono font-bold">ACTIVE</span>
       </div>
       <p class="text-[11px] text-slate-500">Laptop ports software read-only verification engaged.</p>
     </div>
   </aside>
 
   <!-- Right Content View Area -->
-  <section class="flex-1 overflow-y-auto p-6 bg-slate-950">
+  <section class="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 pb-24 md:pb-6 bg-slate-50/50">
+
+    <!-- GUIDED EVIDENCE INGESTION WORKFLOW BANNER -->
+    <div id="ingestionWizardBanner" class="hidden mb-6"></div>
 
     <!-- TAB 1: FLIGHT MAP & TRAJECTORY -->
-    <div id="mapTab" class="tab-pane space-y-6">
+    <div id="mapTab" class="tab-pane space-y-4 sm:space-y-6">
       <!-- Stats Cards Row 1 -->
-      <div class="grid grid-cols-4 gap-4">
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Platform Family</p>
-          <p id="statPlatform" class="text-xl font-bold text-sky-400 mt-1">--</p>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Platform Family</p>
+          <p id="statPlatform" class="text-lg sm:text-2xl font-bold text-sky-600 mt-1 truncate">--</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Total Distance</p>
-          <p id="statDistance" class="text-xl font-bold text-slate-100 mt-1">0 m</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Total Distance</p>
+          <p id="statDistance" class="text-lg sm:text-2xl font-bold text-slate-900 mt-1 truncate">0 m</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Peak Altitude</p>
-          <p id="statAltitude" class="text-xl font-bold text-slate-100 mt-1">0 m</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Peak Altitude</p>
+          <p id="statAltitude" class="text-lg sm:text-2xl font-bold text-slate-900 mt-1 truncate">0 m</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Geofence Breaches</p>
-          <p id="statViolations" class="text-xl font-bold text-red-400 mt-1">0</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Geofence Breaches</p>
+          <p id="statViolations" class="text-lg sm:text-2xl font-bold text-rose-600 mt-1 truncate">0</p>
         </div>
       </div>
 
       <!-- Stats Cards Row 2: Lifecycle & Arming Telemetry -->
-      <div class="grid grid-cols-4 gap-4">
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
           <div class="flex items-center justify-between">
-            <p class="text-xs text-slate-400 font-medium uppercase">Armed At (UTC)</p>
-            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Armed At (UTC)</p>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
           </div>
-          <p id="statArmed" class="text-sm font-bold font-mono text-emerald-400 mt-1 truncate">--</p>
+          <p id="statArmed" class="text-xs sm:text-sm font-bold font-mono text-emerald-600 mt-1 truncate">--</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
           <div class="flex items-center justify-between">
-            <p class="text-xs text-slate-400 font-medium uppercase">Disarmed At (UTC)</p>
-            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Disarmed At (UTC)</p>
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
           </div>
-          <p id="statDisarmed" class="text-sm font-bold font-mono text-amber-400 mt-1 truncate">--</p>
+          <p id="statDisarmed" class="text-xs sm:text-sm font-bold font-mono text-amber-600 mt-1 truncate">--</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Airborne Duration</p>
-          <p id="statDuration" class="text-xl font-bold text-slate-100 mt-1">0 s</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Airborne Duration</p>
+          <p id="statDuration" class="text-lg sm:text-2xl font-bold text-slate-900 mt-1 truncate">0 s</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Telemetry Points</p>
-          <p id="statTelemetry" class="text-xl font-bold text-sky-400 mt-1">0</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Telemetry Points</p>
+          <p id="statTelemetry" class="text-lg sm:text-2xl font-bold text-sky-600 mt-1 truncate">0</p>
         </div>
       </div>
 
       <!-- Map Container -->
-      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="text-sm font-semibold text-slate-200">Reconstructed Flight Trajectory & Active Zones</h2>
-          <div class="flex space-x-2 text-xs">
-            <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-medium">Trajectory (Blue)</span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-medium">Restricted Zones (Red)</span>
+      <div class="glass-panel p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <h2 class="text-xs sm:text-sm font-semibold text-slate-800">Reconstructed Flight Trajectory & Active Zones</h2>
+          <div class="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs">
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-medium">Trajectory (Blue)</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 font-medium">Restricted Zones (Red)</span>
           </div>
         </div>
         <div id="map"></div>
@@ -171,40 +259,40 @@
     </div>
 
     <!-- TAB 2: GEOFENCE MANAGER -->
-    <div id="geofenceTab" class="tab-pane hidden space-y-6">
+    <div id="geofenceTab" class="tab-pane hidden space-y-4 sm:space-y-6">
 
       <!-- REAL-WORLD RESTRICTED AIRSPACE CATALOG (DGCA / ICAO / FAA) -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div>
             <div class="flex items-center space-x-2">
               <span class="text-xl">🌐</span>
-              <h2 class="text-base font-bold text-white tracking-wide">Real-World Restricted Airspace Catalog (DGCA / ICAO / FAA)</h2>
-              <span id="catalogCountBadge" class="bg-sky-950 text-sky-300 border border-sky-800 text-[10px] font-bold px-2 py-0.5 rounded font-mono">35+ Airspaces</span>
+              <h2 class="text-sm sm:text-base font-bold text-slate-900 tracking-wide">Real-World Restricted Airspace Catalog (DGCA / ICAO / FAA)</h2>
+              <span id="catalogCountBadge" class="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded font-mono">35+ Airspaces</span>
             </div>
-            <p class="text-xs text-slate-400 mt-1">Ground-truth coordinates for civil airports, aerodromes, military airbases, government secretariats, and strategic installations.</p>
+            <p class="text-xs text-slate-500 mt-1">Ground-truth coordinates for civil airports, aerodromes, military airbases, government secretariats, and strategic installations.</p>
           </div>
-          <div class="flex items-center space-x-2">
-            <button onclick="loadAllPresetsIntoCase()" class="bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow flex items-center space-x-1.5">
+          <div class="flex items-center space-x-2 shrink-0">
+            <button onclick="loadAllPresetsIntoCase()" class="w-full sm:w-auto bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition shadow-md shadow-rose-500/20 flex items-center justify-center space-x-1.5 touch-press">
               <span>⚡</span> <span>Import All 35+ Real-Life Airspaces</span>
             </button>
           </div>
         </div>
 
-        <!-- Filters & Search Toolbar -->
-        <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/80">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <button onclick="filterCatalogCategory('ALL', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-semibold bg-sky-600 text-white transition">All</button>
-            <button onclick="filterCatalogCategory('AIRPORT', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">✈️ Civil Airports</button>
-            <button onclick="filterCatalogCategory('AIRDROME', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">🚁 Aerodromes</button>
-            <button onclick="filterCatalogCategory('MILITARY_AIRFORCE', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">⚔️ Military Airbases</button>
-            <button onclick="filterCatalogCategory('GOVERNMENT', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">🏛️ Government</button>
-            <button onclick="filterCatalogCategory('STRATEGIC_NUCLEAR', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">⚛️ Strategic & Nuclear</button>
-            <button onclick="filterCatalogCategory('PRISON', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">🔒 Prisons</button>
+        <!-- Filters & Search Toolbar (Scrollable on mobile) -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200/80">
+          <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+            <button onclick="filterCatalogCategory('ALL', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-semibold bg-sky-600 text-white transition whitespace-nowrap shadow-sm">All</button>
+            <button onclick="filterCatalogCategory('AIRPORT', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition whitespace-nowrap">✈️ Civil Airports</button>
+            <button onclick="filterCatalogCategory('AIRDROME', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition whitespace-nowrap">🚁 Aerodromes</button>
+            <button onclick="filterCatalogCategory('MILITARY_AIRFORCE', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition whitespace-nowrap">⚔️ Military Airbases</button>
+            <button onclick="filterCatalogCategory('GOVERNMENT', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition whitespace-nowrap">🏛️ Government</button>
+            <button onclick="filterCatalogCategory('STRATEGIC_NUCLEAR', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition whitespace-nowrap">⚛️ Strategic & Nuclear</button>
+            <button onclick="filterCatalogCategory('PRISON', this)" class="catalog-filter-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition whitespace-nowrap">🔒 Prisons</button>
           </div>
 
-          <div class="flex items-center space-x-2">
-            <select id="catalogRegionSelect" onchange="onCatalogRegionChange()" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1.5 outline-none">
+          <div class="flex items-center space-x-2 shrink-0">
+            <select id="catalogRegionSelect" onchange="onCatalogRegionChange()" class="glass-input text-slate-800 text-xs rounded-lg px-2.5 py-1.5 outline-none">
               <option value="ALL">All Regions</option>
               <option value="Mumbai / MMR">Mumbai / MMR</option>
               <option value="Delhi NCR">Delhi NCR</option>
@@ -218,14 +306,14 @@
               <option value="International (UAE)">UAE</option>
               <option value="International (Singapore)">Singapore</option>
             </select>
-            <input id="catalogSearchInput" type="text" placeholder="Search facilities..." oninput="onCatalogSearchInput()" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2.5 py-1.5 outline-none w-36 md:w-48 placeholder-slate-500" />
+            <input id="catalogSearchInput" type="text" placeholder="Search facilities..." oninput="onCatalogSearchInput()" class="glass-input text-slate-800 text-xs rounded-lg px-2.5 py-1.5 outline-none w-36 sm:w-44 placeholder-slate-400" />
           </div>
         </div>
 
-        <!-- Catalog Items Table -->
-        <div class="overflow-x-auto max-h-64 overflow-y-auto border border-slate-800 rounded-lg">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950 text-slate-400 uppercase sticky top-0 border-b border-slate-800 z-10">
+        <!-- Catalog Items Table (Horizontally Scrollable) -->
+        <div class="overflow-x-auto max-h-64 overflow-y-auto border border-slate-200 rounded-lg">
+          <table class="w-full text-left text-xs min-w-[680px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase sticky top-0 border-b border-slate-200 z-10 font-semibold">
               <tr>
                 <th class="p-2.5">Zone ID</th>
                 <th class="p-2.5">Restricted Space / Facility</th>
@@ -236,15 +324,15 @@
                 <th class="p-2.5 text-right">Action</th>
               </tr>
             </thead>
-            <tbody id="catalogTableBody" class="divide-y divide-slate-800 bg-slate-950/40"></tbody>
+            <tbody id="catalogTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
 
       <!-- CUSTOM INVESTIGATOR GEOFENCE BUILDER -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <h2 class="text-base font-bold text-white mb-1">Custom Investigator-Configured Geofence</h2>
-        <p class="text-xs text-slate-400 mb-4">Draw or configure custom investigation perimeters, altitude ceilings, and temporal constraints.</p>
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
+        <h2 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Custom Investigator-Configured Geofence</h2>
+        <p class="text-xs text-slate-500 mb-4">Draw or configure custom investigation perimeters, altitude ceilings, and temporal constraints.</p>
 
         <!-- 2-Column Geofence Builder: Inputs on Left, Interactive Preview Map on Right -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -252,89 +340,89 @@
           <div class="lg:col-span-5 space-y-4 flex flex-col justify-between">
             <div class="space-y-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1">Zone Name</label>
-                <input id="geoName" type="text" placeholder="e.g. Sensitive Installation A" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Zone Name</label>
+                <input id="geoName" type="text" placeholder="e.g. Sensitive Installation A" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900" />
               </div>
 
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label class="block text-xs font-semibold text-slate-300 mb-1">Zone Type</label>
-                  <select id="geoZoneType" onchange="toggleZoneInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Zone Type</label>
+                  <select id="geoZoneType" onchange="toggleZoneInputs()" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900">
                     <option value="circle">Circular Radius Zone</option>
                     <option value="polygon">Custom Polygon Perimeter</option>
                   </select>
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-300 mb-1">Max Altitude Ceiling (m)</label>
-                  <input id="geoMaxAlt" type="number" placeholder="e.g. 50" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Max Altitude Ceiling (m)</label>
+                  <input id="geoMaxAlt" type="number" placeholder="e.g. 50" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900" />
                 </div>
               </div>
 
               <!-- Circle Inputs -->
               <div id="circleInputs" class="space-y-3">
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1">Center Latitude</label>
-                    <input id="geoCenterLat" type="number" step="0.0001" placeholder="19.1350" oninput="updateCirclePreviewFromInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Center Latitude</label>
+                    <input id="geoCenterLat" type="number" step="0.0001" placeholder="19.1350" oninput="updateCirclePreviewFromInputs()" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900 font-mono" />
                   </div>
                   <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-1">Center Longitude</label>
-                    <input id="geoCenterLon" type="number" step="0.0001" placeholder="72.9150" oninput="updateCirclePreviewFromInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Center Longitude</label>
+                    <input id="geoCenterLon" type="number" step="0.0001" placeholder="72.9150" oninput="updateCirclePreviewFromInputs()" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900 font-mono" />
                   </div>
                 </div>
                 <div>
-                  <label class="block text-xs font-semibold text-slate-300 mb-1">Radius (meters)</label>
-                  <input id="geoRadius" type="number" value="250" placeholder="250" oninput="updateCirclePreviewFromInputs()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white" />
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Radius (meters)</label>
+                  <input id="geoRadius" type="number" value="250" placeholder="250" oninput="updateCirclePreviewFromInputs()" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900 font-mono" />
                 </div>
               </div>
 
               <!-- Polygon Inputs -->
               <div id="polygonInputs" class="hidden space-y-2">
                 <div class="flex items-center justify-between">
-                  <label class="block text-xs font-semibold text-slate-300">Polygon Coordinates ([lat, lon])</label>
-                  <span id="geoPolygonCount" class="text-[10px] text-sky-400 font-mono">0 vertices</span>
+                  <label class="block text-xs font-semibold text-slate-700">Polygon Coordinates ([lat, lon])</label>
+                  <span id="geoPolygonCount" class="text-[10px] text-sky-700 font-mono font-semibold">0 vertices</span>
                 </div>
-                <textarea id="geoCoords" rows="4" placeholder="[[19.133, 72.913], [19.137, 72.913], [19.137, 72.917], [19.133, 72.917]]" oninput="updatePolygonPreviewFromTextarea()" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono"></textarea>
+                <textarea id="geoCoords" rows="3" placeholder="[[19.133, 72.913], [19.137, 72.913], [19.137, 72.917], [19.133, 72.917]]" oninput="updatePolygonPreviewFromTextarea()" class="w-full glass-input rounded-lg px-3 py-1.5 text-xs text-slate-900 font-mono"></textarea>
               </div>
             </div>
 
             <div class="pt-2 flex items-center space-x-3">
-              <button onclick="submitNewGeofence()" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md">
+              <button onclick="submitNewGeofence()" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition shadow-md touch-press">
                 + Add Custom Geofence Zone
               </button>
-              <button type="button" onclick="clearGeofencePreview()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium px-3 py-2.5 rounded-lg transition border border-slate-700">
-                Clear Shape
+              <button type="button" onclick="clearGeofencePreview()" class="bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium px-3 py-2.5 rounded-lg transition border border-slate-200 touch-press">
+                Clear
               </button>
             </div>
           </div>
 
           <!-- Right Column: Interactive Preview Map -->
-          <div class="lg:col-span-7 flex flex-col bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <div class="flex items-center justify-between mb-2">
+          <div class="lg:col-span-7 flex flex-col bg-slate-100/60 border border-slate-200 rounded-xl p-3">
+            <div class="flex flex-wrap items-center justify-between gap-1 mb-2">
               <div class="flex items-center space-x-2">
-                <span class="text-xs font-semibold text-slate-200">Interactive Airspace Preview Map</span>
-                <span id="geoModeBadge" class="text-[10px] px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono font-bold">CIRCLE MODE</span>
+                <span class="text-xs font-semibold text-slate-800">Interactive Airspace Preview Map</span>
+                <span id="geoModeBadge" class="text-[10px] px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono font-bold">CIRCLE MODE</span>
               </div>
-              <span id="geoInstructionHint" class="text-[11px] text-sky-400 font-medium">Click map to place Center</span>
+              <span id="geoInstructionHint" class="text-[11px] text-sky-700 font-medium">Click map to place Center</span>
             </div>
-            <div id="geoPreviewMap" style="height: 320px; min-height: 320px;" class="rounded-lg border border-slate-800 w-full z-0"></div>
-            <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">
-              <span>🔵 Cyan: Flight Trajectory | 🔴 Red: Proposed Geofence</span>
-              <button type="button" onclick="centerPreviewOnDrone()" class="text-xs text-sky-400 hover:text-sky-300 underline">Recenter on Drone Track</button>
+            <div id="geoPreviewMap" class="rounded-lg border border-slate-300 w-full z-0"></div>
+            <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-500 mt-2 px-1 gap-1">
+              <span>🔵 Cyan: Flight Track | 🔴 Red: Geofence</span>
+              <button type="button" onclick="centerPreviewOnDrone()" class="text-xs text-sky-700 hover:text-sky-800 underline font-medium">Recenter on Drone</button>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Active Zones List -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-bold text-white">Active Airspace Perimeters & Zones in Case</h3>
-          <span id="activeZonesCountBadge" class="text-xs text-slate-400">0 zones configured</span>
+          <h3 class="text-sm font-bold text-slate-900">Active Airspace Perimeters & Zones in Case</h3>
+          <span id="activeZonesCountBadge" class="text-xs text-slate-500">0 zones configured</span>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[640px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">Zone ID</th>
                 <th class="p-2.5">Zone / Facility Name</th>
@@ -344,20 +432,20 @@
                 <th class="p-2.5">Classification</th>
               </tr>
             </thead>
-            <tbody id="zonesTableBody" class="divide-y divide-slate-800"></tbody>
+            <tbody id="zonesTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
 
       <!-- Violations List -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-bold text-red-400">Detected Airspace & Geofence Infringements</h3>
-          <span id="violationsCountBadge" class="text-xs text-red-400 font-semibold font-mono">0 breaches</span>
+          <h3 class="text-sm font-bold text-rose-600">Detected Airspace & Geofence Infringements</h3>
+          <span id="violationsCountBadge" class="text-xs text-rose-600 font-semibold font-mono">0 breaches</span>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[640px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">ID</th>
                 <th class="p-2.5">Restricted Space</th>
@@ -368,26 +456,26 @@
                 <th class="p-2.5">Infringement Details</th>
               </tr>
             </thead>
-            <tbody id="violationsTableBody" class="divide-y divide-slate-800"></tbody>
+            <tbody id="violationsTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
     </div>
 
     <!-- TAB 3: EVIDENCE INGESTION -->
-    <div id="evidenceTab" class="tab-pane hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <h2 class="text-base font-bold text-white mb-2">Ingest Digital Evidence (Software Write-Inhibited)</h2>
-        <p class="text-xs text-slate-400 mb-4">Select UAV flight log (.DAT, .bin, .log, .ulg, .pud, .bbl, .srt) or choose a pre-loaded sample dataset.</p>
+    <div id="evidenceTab" class="tab-pane hidden space-y-4 sm:space-y-6">
+      <div id="droneLogsSection" class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
+        <h2 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Ingest Digital Evidence (Software Write-Inhibited)</h2>
+        <p class="text-xs text-slate-500 mb-4">Select UAV flight log (.DAT, .bin, .log, .ulg, .pud, .bbl, .srt) or choose a pre-loaded sample dataset.</p>
 
-        <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Select File from System</label>
-            <input id="evidenceFileInput" type="file" class="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500" />
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Select File from System</label>
+            <input id="evidenceFileInput" type="file" class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
           </div>
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Acquisition Mode</label>
-            <select id="acqMode" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white">
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Acquisition Mode</label>
+            <select id="acqMode" class="w-full glass-input rounded-lg px-3 py-2 text-xs text-slate-900">
               <option value="LOGICAL_EXTRACT">Logical Extraction (Read-Only Mount)</option>
               <option value="PHYSICAL_IMAGE">Bit-level Physical Image (.dd/.E01)</option>
               <option value="MANUAL_IMPORT">Manual Evidence Import</option>
@@ -395,26 +483,54 @@
           </div>
         </div>
 
-        <div class="flex items-center space-x-3">
-          <button onclick="uploadEvidence()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition">
+        <div class="flex flex-wrap items-center gap-2 pt-1">
+          <button onclick="uploadEvidence()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-md shadow-sky-600/20 touch-press">
             Ingest & Hash Evidence
           </button>
-          <span class="text-xs text-slate-500">or test with sample drone logs:</span>
-          <button onclick="loadSample('dji')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">DJI Mavic 3</button>
-          <button onclick="loadSample('ardupilot')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">ArduPilot</button>
-          <button onclick="loadSample('px4')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">PX4 Autopilot</button>
-          <button onclick="loadSample('parrot')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">Parrot Anafi</button>
-          <button onclick="loadSample('betaflight')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs px-2.5 py-1.5 rounded">Betaflight FPV</button>
+          <span class="text-xs text-slate-500 w-full sm:w-auto">or test with sample drone logs:</span>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="loadSample('dji')" class="bg-white hover:bg-slate-100 text-sky-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 touch-press shadow-sm">DJI Mavic 3</button>
+            <button onclick="loadSample('ardupilot')" class="bg-white hover:bg-slate-100 text-sky-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 touch-press shadow-sm">ArduPilot</button>
+            <button onclick="loadSample('px4')" class="bg-white hover:bg-slate-100 text-sky-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 touch-press shadow-sm">PX4 Autopilot</button>
+            <button onclick="loadSample('parrot')" class="bg-white hover:bg-slate-100 text-sky-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 touch-press shadow-sm">Parrot Anafi</button>
+            <button onclick="loadSample('betaflight')" class="bg-white hover:bg-slate-100 text-sky-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 touch-press shadow-sm">Betaflight FPV</button>
+          </div>
         </div>
       </div>
 
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <h3 class="text-sm font-bold text-white mb-3">Itemized Evidence Vault</h3>
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">Itemized Evidence Vault</h3>
+            <p class="text-[11px] text-slate-500">All evidence files are automatically classified and organized into Logs, Video/Images, and GCS.</p>
+          </div>
+          <!-- Category Filter Tabs -->
+          <div class="flex items-center space-x-1.5 bg-slate-100/90 p-1 rounded-lg border border-slate-200 text-xs overflow-x-auto no-scrollbar" id="evidenceCategoryFilterBar">
+            <button onclick="setEvidenceCategoryFilter('all')" id="evFilterBtnAll" class="px-2.5 sm:px-3 py-1 rounded font-bold transition bg-sky-600 text-white shadow-sm flex items-center space-x-1 whitespace-nowrap">
+              <span>All</span>
+              <span id="evFilterCountAll" class="ml-1 px-1.5 py-0.2 rounded-full bg-white/20 text-[10px]">0</span>
+            </button>
+            <button onclick="setEvidenceCategoryFilter('logs')" id="evFilterBtnLogs" class="px-2.5 sm:px-3 py-1 rounded font-medium text-slate-600 hover:text-slate-900 transition flex items-center space-x-1 whitespace-nowrap">
+              <span>📋 Logs</span>
+              <span id="evFilterCountLogs" class="ml-1 px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">0</span>
+            </button>
+            <button onclick="setEvidenceCategoryFilter('video_images')" id="evFilterBtnMedia" class="px-2.5 sm:px-3 py-1 rounded font-medium text-slate-600 hover:text-slate-900 transition flex items-center space-x-1 whitespace-nowrap">
+              <span>🎥 Media</span>
+              <span id="evFilterCountMedia" class="ml-1 px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 text-[10px] font-bold">0</span>
+            </button>
+            <button onclick="setEvidenceCategoryFilter('gcs')" id="evFilterBtnGcs" class="px-2.5 sm:px-3 py-1 rounded font-medium text-slate-600 hover:text-slate-900 transition flex items-center space-x-1 whitespace-nowrap">
+              <span>🎮 GCS</span>
+              <span id="evFilterCountGcs" class="ml-1 px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-800 text-[10px] font-bold">0</span>
+            </button>
+          </div>
+        </div>
+
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[680px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">Item ID</th>
+                <th class="p-2.5">Category</th>
                 <th class="p-2.5">File Name</th>
                 <th class="p-2.5">Size</th>
                 <th class="p-2.5">Platform</th>
@@ -422,34 +538,34 @@
                 <th class="p-2.5">Write-Block</th>
               </tr>
             </thead>
-            <tbody id="evidenceTableBody" class="divide-y divide-slate-800"></tbody>
+            <tbody id="evidenceTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
 
       <!-- MEDIA EVIDENCE INGESTION (MP4, MOV & AERIAL PHOTOS) -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
-        <div class="flex items-center justify-between">
+      <div id="mediaSection" class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div class="flex items-center space-x-2">
-            <span class="text-sky-400 text-lg">📹</span>
+            <span class="text-sky-600 text-lg">📹</span>
             <div>
-              <h3 class="text-sm font-bold text-white">Import UAV Media Evidence (MP4, MOV & Photos)</h3>
-              <p class="text-xs text-slate-400">Extract container metadata, frame thumbnails, and correlate capture timestamps with flight telemetry.</p>
+              <h3 class="text-sm font-bold text-slate-900">Import UAV Media Evidence (MP4, MOV & Photos)</h3>
+              <p class="text-xs text-slate-500">Extract container metadata, frame thumbnails, and correlate capture timestamps with flight telemetry.</p>
             </div>
           </div>
-          <span id="mediaCountBadge" class="text-[11px] font-semibold px-2.5 py-1 rounded bg-sky-950 text-sky-300 border border-sky-800">
+          <span id="mediaCountBadge" class="text-[11px] font-semibold px-2.5 py-1 rounded bg-sky-50 text-sky-700 border border-sky-200 shrink-0 self-start sm:self-auto">
             0 Media Items
           </span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div class="md:col-span-2">
-            <label class="block text-xs font-semibold text-slate-300 mb-1">Select Media Files (Multi-file upload supported)</label>
-            <input id="mediaFilesInput" type="file" multiple accept=".mp4,.mov,.m4v,.avi,.mkv,.jpg,.jpeg,.png,.dng,.tiff,.tif,.bmp,.webp" class="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Select Media Files (Multi-file upload supported)</label>
+            <input id="mediaFilesInput" type="file" multiple accept=".mp4,.mov,.m4v,.avi,.mkv,.jpg,.jpeg,.png,.dng,.tiff,.tif,.bmp,.webp" class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
             <span class="text-[11px] text-slate-500 mt-1 block">Supported: MP4, QuickTime MOV, JPEG, PNG, TIFF, DNG (ISO/IEC 27037:2012 compliant)</span>
           </div>
           <div class="flex items-start md:items-end">
-            <button id="uploadMediaBtn" onclick="uploadMediaFiles()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2">
+            <button id="uploadMediaBtn" onclick="uploadMediaFiles()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2 touch-press">
               <span id="uploadMediaBtnSpinner" class="hidden">⏳</span>
               <span>Ingest & Correlate Media</span>
             </button>
@@ -457,17 +573,17 @@
         </div>
 
         <!-- QUICK SAMPLE MEDIA TEST BUTTONS -->
-        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
-          <span class="text-xs text-slate-400 font-medium">Quick Test with Built-in UAV Samples:</span>
-          <button onclick="loadSampleMedia('video')" class="bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-800 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1.5 shadow-sm">
+        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/80">
+          <span class="text-xs text-slate-600 font-medium">Quick Test Samples:</span>
+          <button onclick="loadSampleMedia('video')" class="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1.5 shadow-sm touch-press">
             <span>🎥</span>
-            <span>Sample Drone MP4 (In-Flight)</span>
+            <span>Drone MP4 (In-Flight)</span>
           </button>
-          <button onclick="loadSampleMedia('photo')" class="bg-sky-950/80 hover:bg-sky-900 text-sky-300 border border-sky-800 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1.5 shadow-sm">
+          <button onclick="loadSampleMedia('photo')" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1.5 shadow-sm touch-press">
             <span>📸</span>
-            <span>Sample Aerial Photo (In-Flight)</span>
+            <span>Aerial Photo (In-Flight)</span>
           </button>
-          <button onclick="loadSampleMedia('unrelated')" class="bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1.5">
+          <button onclick="loadSampleMedia('unrelated')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1.5 touch-press">
             <span>📷</span>
             <span>Out-of-Flight Photo</span>
           </button>
@@ -477,16 +593,16 @@
       </div>
 
       <!-- SYNCHRONIZED MEDIA EVIDENCE & EXTRACTED FRAMES -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
             <span>Synchronized Media Evidence & Extracted Frames</span>
           </h3>
-          <span class="text-xs text-slate-400">Click thumbnail to inspect full frame and telemetry match</span>
+          <span class="text-xs text-slate-500">Click thumbnail to inspect full frame and telemetry match</span>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[680px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">Item ID</th>
                 <th class="p-2.5">Frame Preview</th>
@@ -497,7 +613,7 @@
                 <th class="p-2.5">Action</th>
               </tr>
             </thead>
-            <tbody id="mediaTableBody" class="divide-y divide-slate-800">
+            <tbody id="mediaTableBody" class="divide-y divide-slate-100 bg-white/60">
               <tr><td colspan="7" class="p-4 text-center text-slate-500">No media assets ingested yet.</td></tr>
             </tbody>
           </table>
@@ -506,12 +622,15 @@
     </div>
 
     <!-- TAB 4: TIMELINE -->
-    <div id="timelineTab" class="tab-pane hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <h3 class="text-sm font-bold text-white mb-3">Reconstructed Master Event Timeline (UTC)</h3>
+    <div id="timelineTab" class="tab-pane hidden space-y-4 sm:space-y-6">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-slate-900">Reconstructed Master Event Timeline (UTC)</h3>
+          <span class="text-xs text-slate-500">Chronological Event Stream</span>
+        </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[580px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">Timestamp (UTC)</th>
                 <th class="p-2.5">Category</th>
@@ -520,19 +639,22 @@
                 <th class="p-2.5">Coordinates / Altitude</th>
               </tr>
             </thead>
-            <tbody id="timelineTableBody" class="divide-y divide-slate-800"></tbody>
+            <tbody id="timelineTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
     </div>
 
     <!-- TAB 5: ANOMALIES -->
-    <div id="anomaliesTab" class="tab-pane hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <h3 class="text-sm font-bold text-amber-400 mb-3">Detected Integrity & Flight Anomalies</h3>
+    <div id="anomaliesTab" class="tab-pane hidden space-y-4 sm:space-y-6">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-amber-600">Detected Integrity & Flight Anomalies</h3>
+          <span class="text-xs text-slate-500">Automated Heuristic Engine</span>
+        </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[580px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">ID</th>
                 <th class="p-2.5">Type</th>
@@ -541,24 +663,27 @@
                 <th class="p-2.5">Forensic Analysis Description</th>
               </tr>
             </thead>
-            <tbody id="anomaliesTableBody" class="divide-y divide-slate-800"></tbody>
+            <tbody id="anomaliesTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
     </div>
 
     <!-- TAB 6: AUDIT TRAIL -->
-    <div id="auditTab" class="tab-pane hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-sm font-bold text-emerald-400">Chain-of-Custody Cryptographic Audit Ledger</h3>
-          <button onclick="verifyChainOfCustody()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded transition">
+    <div id="auditTab" class="tab-pane hidden space-y-4 sm:space-y-6">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <div>
+            <h3 class="text-sm font-bold text-emerald-700">Chain-of-Custody Cryptographic Audit Ledger</h3>
+            <p class="text-[11px] text-slate-500">Immutable chronological hash verification log compliant with ISO/IEC 27037.</p>
+          </div>
+          <button onclick="verifyChainOfCustody()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition shadow-md shadow-emerald-600/20 shrink-0 self-start sm:self-auto touch-press">
             Re-verify Chain Integrity
           </button>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950/80 text-slate-400 uppercase border-b border-slate-800">
+          <table class="w-full text-left text-xs min-w-[620px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase border-b border-slate-200 font-semibold">
               <tr>
                 <th class="p-2.5">#</th>
                 <th class="p-2.5">Timestamp (UTC)</th>
@@ -568,59 +693,59 @@
                 <th class="p-2.5">HMAC Signature</th>
               </tr>
             </thead>
-            <tbody id="auditTableBody" class="divide-y divide-slate-800"></tbody>
+            <tbody id="auditTableBody" class="divide-y divide-slate-100 bg-white/60"></tbody>
           </table>
         </div>
       </div>
     </div>
 
     <!-- TAB 7: REPORTS -->
-    <div id="reportsTab" class="tab-pane hidden space-y-6">
-      <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-        <h2 class="text-base font-bold text-white mb-2">Court-Admissible Forensic Exports</h2>
-        <p class="text-xs text-slate-400 mb-6">Generated in accordance with ISO/IEC 27037:2012 (Identification, Collection, Acquisition, Preservation) and ISO/IEC 27042:2015 (Analysis and Interpretation).</p>
+    <div id="reportsTab" class="tab-pane hidden space-y-4 sm:space-y-6">
+      <div class="glass-panel p-4 sm:p-6 rounded-xl border border-slate-200/80">
+        <h2 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Court-Admissible Forensic Exports</h2>
+        <p class="text-xs text-slate-500 mb-5">Generated in accordance with ISO/IEC 27037:2012 (Identification, Collection, Acquisition, Preservation) and ISO/IEC 27042:2015 (Analysis and Interpretation).</p>
 
-        <div class="grid grid-cols-4 gap-4">
-          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <div class="glass-card p-4 rounded-xl border border-slate-200/90 text-center flex flex-col justify-between">
             <div>
               <div class="text-2xl mb-2">📄</div>
-              <h4 class="text-sm font-bold text-white">Full Forensic Report</h4>
-              <p class="text-[11px] text-slate-400 mt-1">Court-ready HTML document with itemized tables and CoC sign-off.</p>
+              <h4 class="text-sm font-bold text-slate-900">Full Forensic Report</h4>
+              <p class="text-[11px] text-slate-500 mt-1">Court-ready HTML document with itemized tables and CoC sign-off.</p>
             </div>
-            <button onclick="downloadReport('html')" class="mt-4 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold py-2 rounded">
+            <button onclick="downloadReport('html')" class="mt-4 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold py-2 rounded-lg transition shadow-md shadow-sky-600/20 touch-press">
               Open / Print PDF
             </button>
           </div>
 
-          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+          <div class="glass-card p-4 rounded-xl border border-slate-200/90 text-center flex flex-col justify-between">
             <div>
               <div class="text-2xl mb-2">📊</div>
-              <h4 class="text-sm font-bold text-white">JSON Forensic Payload</h4>
-              <p class="text-[11px] text-slate-400 mt-1">Full machine-readable export of case, flight telemetry, and timeline.</p>
+              <h4 class="text-sm font-bold text-slate-900">JSON Forensic Payload</h4>
+              <p class="text-[11px] text-slate-500 mt-1">Full machine-readable export of case, flight telemetry, and timeline.</p>
             </div>
-            <button onclick="downloadReport('json')" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2 rounded">
+            <button onclick="downloadReport('json')" class="mt-4 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2 rounded-lg transition border border-slate-700 touch-press">
               Download JSON
             </button>
           </div>
 
-          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+          <div class="glass-card p-4 rounded-xl border border-slate-200/90 text-center flex flex-col justify-between">
             <div>
               <div class="text-2xl mb-2">🌍</div>
-              <h4 class="text-sm font-bold text-white">3D Google Earth KML</h4>
-              <p class="text-[11px] text-slate-400 mt-1">Spatial 3D flight trajectory with timestamps for Google Earth Pro.</p>
+              <h4 class="text-sm font-bold text-slate-900">3D Google Earth KML</h4>
+              <p class="text-[11px] text-slate-500 mt-1">Spatial 3D flight trajectory with timestamps for Google Earth Pro.</p>
             </div>
-            <button onclick="downloadReport('kml')" class="mt-4 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold py-2 rounded">
+            <button onclick="downloadReport('kml')" class="mt-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-lg transition shadow-md shadow-emerald-600/20 touch-press">
               Download KML
             </button>
           </div>
 
-          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center flex flex-col justify-between">
+          <div class="glass-card p-4 rounded-xl border border-slate-200/90 text-center flex flex-col justify-between">
             <div>
               <div class="text-2xl mb-2">🏛️</div>
-              <h4 class="text-sm font-bold text-white">DFXML Standard Export</h4>
-              <p class="text-[11px] text-slate-400 mt-1">NIST Digital Forensics XML evidence interchange document.</p>
+              <h4 class="text-sm font-bold text-slate-900">DFXML Standard Export</h4>
+              <p class="text-[11px] text-slate-500 mt-1">NIST Digital Forensics XML evidence interchange document.</p>
             </div>
-            <button onclick="downloadReport('dfxml')" class="mt-4 bg-purple-700 hover:bg-purple-600 text-white text-xs font-semibold py-2 rounded">
+            <button onclick="downloadReport('dfxml')" class="mt-4 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold py-2 rounded-lg transition shadow-md shadow-purple-600/20 touch-press">
               Download DFXML
             </button>
           </div>
@@ -629,76 +754,76 @@
     </div>
 
     <!-- TAB 8: GCS & OPERATOR FORENSICS -->
-    <div id="gcsTab" class="tab-pane hidden space-y-6">
+    <div id="gcsTab" class="tab-pane hidden space-y-4 sm:space-y-6">
       <!-- 4 Stat Cards -->
-      <div class="grid grid-cols-4 gap-4">
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Detected GCS Platform</p>
-          <p id="gcsStatPlatform" class="text-xl font-bold text-sky-400 mt-1">None</p>
-          <p id="gcsStatFC" class="text-[11px] text-slate-500 mt-0.5">FC: --</p>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Detected GCS Platform</p>
+          <p id="gcsStatPlatform" class="text-lg sm:text-xl font-bold text-sky-600 mt-1 truncate">None</p>
+          <p id="gcsStatFC" class="text-[11px] text-slate-500 mt-0.5 truncate">FC: --</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Operator Geolocation</p>
-          <p id="gcsStatOperator" class="text-sm font-bold text-emerald-400 mt-1 font-mono truncate">Not Identified</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Operator Geolocation</p>
+          <p id="gcsStatOperator" class="text-xs sm:text-sm font-bold text-emerald-600 mt-1 font-mono truncate">Not Identified</p>
           <p id="gcsStatOpSource" class="text-[11px] text-slate-500 mt-0.5 truncate">Source: --</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Planned Waypoints</p>
-          <p id="gcsStatWaypoints" class="text-xl font-bold text-slate-100 mt-1">0</p>
-          <p id="gcsStatPlanDist" class="text-[11px] text-slate-500 mt-0.5">Planned Dist: 0 m</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Planned Waypoints</p>
+          <p id="gcsStatWaypoints" class="text-lg sm:text-xl font-bold text-slate-900 mt-1 truncate">0</p>
+          <p id="gcsStatPlanDist" class="text-[11px] text-slate-500 mt-0.5 truncate">Planned Dist: 0 m</p>
         </div>
-        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p class="text-xs text-slate-400 font-medium uppercase">Mission Adherence</p>
-          <p id="gcsStatAdherence" class="text-xl font-bold text-sky-400 mt-1">-- %</p>
-          <p id="gcsStatReached" class="text-[11px] text-slate-500 mt-0.5">0 / 0 reached</p>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Mission Adherence</p>
+          <p id="gcsStatAdherence" class="text-lg sm:text-xl font-bold text-sky-600 mt-1 truncate">-- %</p>
+          <p id="gcsStatReached" class="text-[11px] text-slate-500 mt-0.5 truncate">0 / 0 reached</p>
         </div>
       </div>
 
       <!-- Supported Ground Control Stations Info Banner -->
-      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div class="glass-panel p-4 rounded-xl border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div class="flex items-center space-x-3">
           <span class="text-2xl">🛰️</span>
           <div>
-            <h4 class="text-sm font-bold text-white">Cross-Platform Ground Control Station Forensic Engine</h4>
-            <p class="text-xs text-slate-400">Supports MAVLink TLOG, QGC Plan/Waypoints, DJI Pilot 2 WPML/GS Pro, iNav/MWP Mission, and Parrot FlightPlan.</p>
+            <h4 class="text-sm font-bold text-slate-900">Cross-Platform Ground Control Station Forensic Engine</h4>
+            <p class="text-xs text-slate-500">Supports MAVLink TLOG, QGC Plan/Waypoints, DJI Pilot 2 WPML/GS Pro, iNav/MWP Mission, and Parrot FlightPlan.</p>
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-1.5 text-xs">
-          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">Mission Planner</span>
-          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">QGroundControl</span>
-          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">DJI Pilot 2</span>
-          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">iNav / MWP</span>
-          <span class="px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-mono text-[11px]">Parrot FreeFlight</span>
+          <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] font-semibold">Mission Planner</span>
+          <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] font-semibold">QGroundControl</span>
+          <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] font-semibold">DJI Pilot 2</span>
+          <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] font-semibold">iNav / MWP</span>
+          <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] font-semibold">Parrot FreeFlight</span>
         </div>
       </div>
 
       <!-- Dual Path Map: Flown vs Planned Route + Operator Location -->
-      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+      <div class="glass-panel p-3.5 sm:p-4 rounded-xl border border-slate-200/80 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h3 class="text-sm font-semibold text-slate-200">Autonomous Mission Adherence: Planned Route vs. Executed Trajectory</h3>
-            <p class="text-xs text-slate-400">Geospatial comparison of uploaded autonomous flight plan against recovered drone blackbox telemetry.</p>
+            <h3 class="text-xs sm:text-sm font-semibold text-slate-800">Autonomous Mission Adherence: Planned Route vs. Executed Trajectory</h3>
+            <p class="text-xs text-slate-500">Geospatial comparison of uploaded autonomous flight plan against recovered drone blackbox telemetry.</p>
           </div>
-          <div class="flex items-center space-x-2 text-xs">
-            <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-800 font-medium">Flown Telemetry (Blue)</span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-medium">Planned Path (Dashed Cyan)</span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-medium">🎯 Operator / GCS</span>
+          <div class="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs">
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-medium">Flown Telemetry (Blue)</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 font-medium">Planned Path (Dashed)</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">🎯 Operator / GCS</span>
           </div>
         </div>
-        <div id="gcsMap" style="height: 480px; width: 100%; border-radius: 0.75rem; position: relative; z-index: 10; isolation: isolate;" class="border border-slate-800 relative z-10"></div>
+        <div id="gcsMap"></div>
       </div>
 
       <!-- Planned Waypoints Schedule Table -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-3">
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-bold text-white flex items-center space-x-2">
+          <h3 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
             <span>📋 Planned Waypoint Mission Schedule & Adherence Audit</span>
           </h3>
-          <span id="gcsWaypointCountBadge" class="text-xs text-slate-400">0 waypoints</span>
+          <span id="gcsWaypointCountBadge" class="text-xs text-slate-500">0 waypoints</span>
         </div>
         <div class="overflow-x-auto max-h-72 overflow-y-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-slate-950 text-slate-400 uppercase sticky top-0 border-b border-slate-800 z-10">
+          <table class="w-full text-left text-xs min-w-[620px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase sticky top-0 border-b border-slate-200 z-10 font-semibold">
               <tr>
                 <th class="p-2.5">Seq</th>
                 <th class="p-2.5">Command / Action</th>
@@ -709,7 +834,7 @@
                 <th class="p-2.5">Adherence Status</th>
               </tr>
             </thead>
-            <tbody id="gcsWaypointsTableBody" class="divide-y divide-slate-800 bg-slate-950/40">
+            <tbody id="gcsWaypointsTableBody" class="divide-y divide-slate-100 bg-white/60">
               <tr><td colspan="7" class="p-4 text-center text-slate-500">No GCS mission plan loaded for this case.</td></tr>
             </tbody>
           </table>
@@ -717,57 +842,57 @@
       </div>
 
       <!-- Ingest GCS Artifact Dropzone & Upload Action -->
-      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl space-y-4">
+      <div id="gcsIngestSection" class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center space-x-2">
             <span class="text-xl">📥</span>
             <div>
-              <h3 class="text-sm font-bold text-white">Ingest Ground Control Station Evidence</h3>
-              <p class="text-xs text-slate-400">Upload GCS telemetry (.tlog), mission plans (.plan, .waypoints, .kml, .json, .mission, .mwp), or parameter files.</p>
+              <h3 class="text-sm font-bold text-slate-900">Ingest Ground Control Station Evidence</h3>
+              <p class="text-xs text-slate-500">Upload GCS telemetry (.tlog), mission plans (.plan, .waypoints, .kml, .json, .mission, .mwp), or parameter files.</p>
             </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div class="md:col-span-2">
-            <input id="gcsFileInput" type="file" accept=".tlog,.plan,.waypoints,.kml,.kmz,.json,.mission,.mwp,.xml,.param,.parm" class="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
-            <span class="text-[11px] text-slate-500 mt-1 block">Supported formats: MAVLink .tlog, QGroundControl .plan, Mission Planner .waypoints, DJI WPML .kml/.kmz, GS Pro .json, iNav .mission, MWP .mwp/.xml, Parrot .mavlink/.json</span>
+            <input id="gcsFileInput" type="file" accept=".tlog,.plan,.waypoints,.kml,.kmz,.json,.mission,.mwp,.xml,.param,.parm" class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-600 file:text-white hover:file:bg-sky-500 cursor-pointer" />
+            <span class="text-[11px] text-slate-500 mt-1 block">Supported: MAVLink .tlog, QGroundControl .plan, Mission Planner .waypoints, DJI WPML .kml, GS Pro .json, iNav .mission, Parrot .mavlink</span>
           </div>
           <div class="flex items-start md:items-end">
-            <button id="uploadGcsBtn" onclick="uploadGcsArtifact()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2">
+            <button id="uploadGcsBtn" onclick="uploadGcsArtifact()" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2 touch-press">
               <span id="uploadGcsBtnSpinner" class="hidden">⏳</span>
               <span>Ingest & Correlate GCS Artifact</span>
             </button>
           </div>
         </div>
 
-        <div class="pt-3 border-t border-slate-800/80">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-semibold text-slate-300">Quick-Load Pre-correlated GCS Samples:</span>
+        <div class="pt-3 border-t border-slate-200/80">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-1">
+            <span class="text-xs font-semibold text-slate-700">Quick-Load Pre-correlated GCS Samples:</span>
             <span class="text-[11px] text-slate-500">Pairs with normal flight logs for trajectory compliance</span>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <button onclick="loadSampleGcs('ardupilot_mission.waypoints')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="loadSampleGcs('ardupilot_mission.waypoints')" class="bg-white hover:bg-slate-50 text-sky-700 border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 touch-press shadow-sm">
               <span>🗺️</span>
               <span>ArduPilot .waypoints</span>
             </button>
-            <button onclick="loadSampleGcs('px4_survey.plan')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+            <button onclick="loadSampleGcs('px4_survey.plan')" class="bg-white hover:bg-slate-50 text-sky-700 border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 touch-press shadow-sm">
               <span>🛰️</span>
               <span>PX4 .plan</span>
             </button>
-            <button onclick="loadSampleGcs('dji_pilot2_mission.kml')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+            <button onclick="loadSampleGcs('dji_pilot2_mission.kml')" class="bg-white hover:bg-slate-50 text-sky-700 border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 touch-press shadow-sm">
               <span>📍</span>
               <span>DJI WPML .kml</span>
             </button>
-            <button onclick="loadSampleGcs('inav_autonomous.mission')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+            <button onclick="loadSampleGcs('inav_autonomous.mission')" class="bg-white hover:bg-slate-50 text-sky-700 border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 touch-press shadow-sm">
               <span>🎮</span>
               <span>iNav .mission</span>
             </button>
-            <button onclick="loadSampleGcs('parrot_flightplan.mavlink')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+            <button onclick="loadSampleGcs('parrot_flightplan.mavlink')" class="bg-white hover:bg-slate-50 text-sky-700 border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 touch-press shadow-sm">
               <span>🦜</span>
               <span>Parrot .mavlink</span>
             </button>
-            <button onclick="loadSampleGcs('ardupilot_telemetry.tlog')" class="bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-800 text-xs px-2.5 py-1.5 rounded transition flex items-center space-x-1">
+            <button onclick="loadSampleGcs('ardupilot_telemetry.tlog')" class="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1 touch-press shadow-sm">
               <span>📡</span>
               <span>MAVLink .tlog</span>
             </button>
@@ -778,1507 +903,297 @@
       </div>
     </div>
 
+    <!-- TAB 9: MOBILE COMPANION APPS & WIRELESS FORENSICS -->
+    <div id="mobileTab" class="tab-pane hidden space-y-4 sm:space-y-6">
+      <!-- 4 Stat Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Detected Mobile Apps</p>
+          <p id="mobStatApps" class="text-lg sm:text-xl font-bold text-sky-600 mt-1 truncate">None</p>
+          <p class="text-[11px] text-slate-500 mt-0.5 truncate">DJI, Ardu, Parrot, BF, Autel</p>
+        </div>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Registered Pilot</p>
+          <p id="mobStatPilot" class="text-xs sm:text-sm font-bold text-emerald-600 mt-1 truncate font-mono">Not Identified</p>
+          <p id="mobStatPilotEmail" class="text-[11px] text-slate-500 mt-0.5 truncate">Email: --</p>
+        </div>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Paired Aircraft SN</p>
+          <p id="mobStatSN" class="text-xs sm:text-sm font-bold text-slate-900 mt-1 font-mono truncate">Not Bound</p>
+          <p class="text-[11px] text-slate-500 mt-0.5 truncate">Hardware Binding</p>
+        </div>
+        <div class="glass-card p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+          <p class="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider">Flight Records</p>
+          <p id="mobStatLogs" class="text-lg sm:text-xl font-bold text-sky-600 mt-1 truncate">0 logs</p>
+          <p class="text-[11px] text-slate-500 mt-0.5 truncate">Mobile Cached Telemetry</p>
+        </div>
+      </div>
+
+      <!-- Wireless Acquisition Console & Direct Mobile Ingestion -->
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div class="flex items-center space-x-3">
+            <span class="text-2xl">📡</span>
+            <div>
+              <h4 class="text-sm font-bold text-slate-900">Forensic Wireless Acquisition Console</h4>
+              <p class="text-xs text-slate-500">Acquire drone flight data wirelessly over ad-hoc Wi-Fi AP, MAVLink UDP, Wireless ADB, or local browser upload under ISO/IEC 27037.</p>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-[11px] font-semibold">Dual-Hash Integrity</span>
+            <span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-mono text-[11px] font-semibold">Write-Block Enforced</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Left: Remote Wireless Acquisition Trigger -->
+          <div class="lg:col-span-7 bg-slate-50/80 p-4 rounded-xl border border-slate-200 space-y-3">
+            <h5 class="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+              <span>🛰️</span> <span>Remote Drone / Controller Wireless Pull</span>
+            </h5>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label class="block text-slate-600 mb-1 font-medium">Wireless Acquisition Mode</label>
+                <select id="wirelessModeSelect" class="w-full glass-input rounded-lg px-2.5 py-1.5 text-slate-800 text-xs">
+                  <option value="WIFI_FTP">Drone Wi-Fi AP (Parrot / DJI QuickTransfer)</option>
+                  <option value="MAVLINK_UDP">MAVLink Telemetry UDP (ArduPilot / PX4)</option>
+                  <option value="WIRELESS_ADB">Wireless Android ADB (Suspect Device)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-slate-600 mb-1 font-medium">Target Drone Platform</label>
+                <select id="wirelessPlatformSelect" class="w-full glass-input rounded-lg px-2.5 py-1.5 text-slate-800 text-xs">
+                  <option value="Parrot">Parrot (Anafi / Bebop 2)</option>
+                  <option value="DJI">DJI (QuickTransfer / Smart RC)</option>
+                  <option value="ArduPilot">ArduPilot (Pixhawk MAVLink)</option>
+                  <option value="PX4">PX4 Autopilot</option>
+                  <option value="Betaflight">Betaflight / SpeedyBee</option>
+                  <option value="Autel">Autel Robotics</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3 text-xs">
+              <div class="col-span-2">
+                <label class="block text-slate-600 mb-1 font-medium">Gateway / Device IP</label>
+                <input id="wirelessIpInput" type="text" value="192.168.42.1" class="w-full glass-input rounded-lg px-2.5 py-1.5 font-mono text-slate-800 text-xs" />
+              </div>
+              <div>
+                <label class="block text-slate-600 mb-1 font-medium">Port</label>
+                <input id="wirelessPortInput" type="number" value="21" class="w-full glass-input rounded-lg px-2.5 py-1.5 font-mono text-slate-800 text-xs" />
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <button onclick="triggerWirelessAcquisition()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-md shadow-indigo-600/20 flex items-center space-x-1.5 touch-press">
+                <span>⚡</span> <span>Execute Wireless Acquisition</span>
+              </button>
+              <div id="wirelessStatusIndicator" class="text-xs"></div>
+            </div>
+          </div>
+
+          <!-- Right: Mobile Device Wireless Direct Upload Portal -->
+          <div class="lg:col-span-5 bg-slate-50/80 p-4 rounded-xl border border-slate-200 space-y-3 flex flex-col justify-between">
+            <div>
+              <h5 class="text-xs font-bold text-slate-800 flex items-center space-x-1.5 mb-1">
+                <span>📲</span> <span>Direct Mobile Browser Ingestion Portal</span>
+              </h5>
+              <p class="text-[11px] text-slate-500 mb-2">Connect suspect phone or tablet to this workstation's Wi-Fi hotspot and upload files directly.</p>
+              <div class="bg-white p-2.5 rounded-lg border border-slate-200 text-[11px] space-y-1 mb-3 shadow-sm">
+                <div class="text-slate-500 text-[10px]">Mobile Quick-Upload Portal:</div>
+                <div class="flex items-center justify-between">
+                  <a id="mobilePortalLink" href="/upload" target="_blank" class="font-mono text-sky-700 hover:underline font-bold truncate max-w-[180px]">http://&lt;host&gt;:8000/upload</a>
+                  <a id="mobilePortalBtn" href="/upload" target="_blank" class="text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded font-semibold hover:bg-sky-100 shrink-0">Open Portal ↗</a>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label class="block border-2 border-dashed border-slate-300 hover:border-sky-500 p-3.5 rounded-xl text-center cursor-pointer transition bg-white/60 hover:bg-white">
+                <span class="text-xl block mb-1">📂</span>
+                <span class="text-xs text-slate-700 font-semibold block">Select Mobile Backup / Companion File</span>
+                <span class="text-[10px] text-slate-500 block mt-0.5">Uploads via local Wi-Fi with automatic hashing</span>
+                <input type="file" id="mobileDirectFileInput" onchange="uploadMobileEvidenceFile(this.files[0])" class="hidden" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detected Mobile Companion Artifacts Inspector -->
+      <div class="space-y-4">
+        <h4 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
+          <span>🔍</span> <span>Discovered Mobile Companion Artifacts & Identifiers</span>
+        </h4>
+        <div id="mobileArtifactsContainer" class="space-y-4">
+          <!-- Populated by mobile.js -->
+        </div>
+      </div>
+
+      <!-- Wireless Transfer Sessions History -->
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-3">
+        <h4 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
+          <span>📜</span> <span>Wireless Acquisition Transfer Session Ledger</span>
+        </h4>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs min-w-[550px]">
+            <thead class="bg-slate-100/90 text-slate-600 uppercase tracking-wider font-semibold text-[10px] border-b border-slate-200">
+              <tr>
+                <th class="px-3 sm:px-4 py-2">Session ID</th>
+                <th class="px-3 sm:px-4 py-2">Protocol</th>
+                <th class="px-3 sm:px-4 py-2">Source IP / Gateway</th>
+                <th class="px-3 sm:px-4 py-2">Target Device</th>
+                <th class="px-3 sm:px-4 py-2">Bytes / Files</th>
+                <th class="px-3 sm:px-4 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody id="wirelessSessionsTableBody" class="divide-y divide-slate-100 bg-white/60">
+              <tr>
+                <td colspan="6" class="px-4 py-6 text-center text-xs text-slate-500">No wireless transfer sessions logged for this case.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Supported Mobile Companion Catalog Grid -->
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-200 pb-2.5">
+          <div>
+            <h4 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
+              <span>📱</span> <span>Supported Mobile Companion Ecosystems Catalog</span>
+            </h4>
+            <p class="text-xs text-slate-500">Comprehensive forensic decoders for all major drone platforms and mobile companion software.</p>
+          </div>
+        </div>
+        <div id="mobileCatalogGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          <!-- Populated by mobile.js -->
+        </div>
+      </div>
+    </div>
+
   </section>
 </main>
 
+<!-- Mobile Bottom Navigation Bar (Visible on phones & small tablets) -->
+<nav id="mobileBottomNav" class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-xl border-t border-slate-200/90 safe-bottom-padding px-1.5 py-1 flex items-center justify-around shadow-lg">
+  <button onclick="switchTab('mapTab')" class="mobile-bottom-btn flex flex-col items-center py-1 px-2 text-sky-700 font-bold text-[10px] transition touch-press" title="Flight Trajectory">
+    <span class="text-base mb-0.5">🛰️</span>
+    <span>Trajectory</span>
+  </button>
+  <button onclick="switchTab('evidenceTab')" class="mobile-bottom-btn flex flex-col items-center py-1 px-2 text-slate-500 text-[10px] transition touch-press" title="Evidence Vault">
+    <span class="text-base mb-0.5">📦</span>
+    <span>Evidence</span>
+  </button>
+  <button onclick="switchTab('geofenceTab')" class="mobile-bottom-btn flex flex-col items-center py-1 px-2 text-slate-500 text-[10px] transition touch-press" title="Geofences">
+    <span class="text-base mb-0.5">🛡️</span>
+    <span>Geofence</span>
+  </button>
+  <button onclick="switchTab('reportsTab')" class="mobile-bottom-btn flex flex-col items-center py-1 px-2 text-slate-500 text-[10px] transition touch-press" title="Reports">
+    <span class="text-base mb-0.5">📑</span>
+    <span>Reports</span>
+  </button>
+  <button onclick="toggleMobileDrawer()" class="flex flex-col items-center py-1 px-2 text-slate-500 hover:text-slate-800 text-[10px] transition touch-press" title="All Modules">
+    <span class="text-base mb-0.5">☰</span>
+    <span>More</span>
+  </button>
+</nav>
+
 <!-- Modal: New Case -->
-<div id="newCaseModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl">
-    <h3 class="text-base font-bold text-white mb-3">Initialize New UAV Forensic Case</h3>
+<div id="newCaseModal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4">
+  <div class="bg-white/95 border border-slate-200/90 rounded-2xl p-5 sm:p-6 w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto glass-panel">
+    <div class="flex items-center justify-between mb-3 border-b border-slate-200 pb-2">
+      <h3 class="text-sm sm:text-base font-bold text-slate-900 flex items-center space-x-2">
+        <span>Initialize New UAV Case</span>
+      </h3>
+      <button onclick="closeNewCaseModal()" class="text-slate-400 hover:text-slate-700 text-lg p-1 rounded-lg">✕</button>
+    </div>
     <div class="space-y-3 text-xs">
       <div>
-        <label class="block font-semibold text-slate-300 mb-1">Case Identifier</label>
-        <input id="modalCaseId" type="text" placeholder="e.g. CASE-2026-IITB-01" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+        <label class="block font-semibold text-slate-700 mb-1">Case Identifier</label>
+        <input id="modalCaseId" type="text" placeholder="e.g. CASE-2026-IITB-01" class="w-full glass-input rounded-lg px-3 py-2 text-slate-900 font-mono" />
       </div>
       <div>
-        <label class="block font-semibold text-slate-300 mb-1">Case Title</label>
-        <input id="modalCaseName" type="text" placeholder="e.g. Unauthorized UAV Airspace Intrusion" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+        <label class="block font-semibold text-slate-700 mb-1">Case Title</label>
+        <input id="modalCaseName" type="text" placeholder="e.g. Unauthorized UAV Airspace Intrusion" class="w-full glass-input rounded-lg px-3 py-2 text-slate-900" />
       </div>
       <div>
-        <label class="block font-semibold text-slate-300 mb-1">Investigator Name</label>
-        <input id="modalInvestigator" type="text" placeholder="e.g. Forensic Examiner S. Sharma" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+        <label class="block font-semibold text-slate-700 mb-1">Investigator Name</label>
+        <input id="modalInvestigator" type="text" placeholder="e.g. Forensic Examiner S. Sharma" class="w-full glass-input rounded-lg px-3 py-2 text-slate-900" />
       </div>
       <div>
-        <label class="block font-semibold text-slate-300 mb-1">Agency / Laboratory</label>
-        <input id="modalAgency" type="text" placeholder="e.g. Central Drone Forensic Laboratory" class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white" />
+        <label class="block font-semibold text-slate-700 mb-1">Agency / Laboratory</label>
+        <input id="modalAgency" type="text" placeholder="e.g. Central Drone Forensic Laboratory" class="w-full glass-input rounded-lg px-3 py-2 text-slate-900" />
       </div>
       <div>
-        <label class="block font-semibold text-slate-300 mb-1">Notes / Description</label>
-        <textarea id="modalDesc" rows="2" placeholder="Incident brief..." class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white"></textarea>
+        <label class="block font-semibold text-slate-700 mb-1">Notes / Description</label>
+        <textarea id="modalDesc" rows="2" placeholder="Incident brief..." class="w-full glass-input rounded-lg px-3 py-2 text-slate-900"></textarea>
       </div>
     </div>
     <div class="flex justify-end space-x-2 mt-5">
-      <button onclick="closeNewCaseModal()" class="px-3 py-1.5 rounded text-xs text-slate-400 hover:text-white">Cancel</button>
-      <button onclick="submitNewCase()" class="px-4 py-1.5 rounded text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white">Create Case</button>
+      <button onclick="closeNewCaseModal()" class="px-3 py-2 rounded-lg text-xs text-slate-500 hover:text-slate-800 touch-press">Cancel</button>
+      <button onclick="submitNewCase()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white shadow-md shadow-sky-600/20 touch-press">Create Case</button>
     </div>
   </div>
 </div>
 
-<script>
-  let activeCaseId = null;
-  let leafletMap = null;
-  let flightPathLayer = null;
-  let zonesLayerGroup = null;
-
-  // GCS interactive map state
-  let gcsMap = null;
-  let gcsMapLayers = null;
-  let cachedGcsData = null;
-
-  // Geofence interactive builder state
-  let activeGeoJson = null;
-  let geoPreviewMap = null;
-  let geoPreviewDronePath = null;
-  let geoPreviewShapeLayer = null;
-  let geoPreviewMarker = null;
-  let polygonPoints = [];
-
-  // Initialize Map
-  function initMap() {
-    if (!leafletMap) {
-      leafletMap = L.map('map').setView([19.1334, 72.9133], 14);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(leafletMap);
-      zonesLayerGroup = L.layerGroup().addTo(leafletMap);
-    }
-  }
-
-  function switchTab(tabId) {
-    document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
-    document.getElementById(tabId).classList.remove('hidden');
-
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.classList.remove('bg-slate-800', 'text-sky-400');
-      btn.classList.add('text-slate-300');
-    });
-    event.currentTarget.classList.add('bg-slate-800', 'text-sky-400');
-
-    if (tabId === 'mapTab') {
-      setTimeout(() => { if (leafletMap) leafletMap.invalidateSize(); }, 200);
-    } else if (tabId === 'geofenceTab') {
-      setTimeout(() => {
-        initGeoPreviewMap();
-        if (geoPreviewMap) {
-          geoPreviewMap.invalidateSize();
-          syncDronePathToPreviewMap();
-        }
-      }, 200);
-    } else if (tabId === 'gcsTab') {
-      setTimeout(() => {
-        initGcsMap();
-        if (gcsMap) {
-          gcsMap.invalidateSize();
-          renderGcsMap();
-        }
-      }, 200);
-    }
-  }
-
-  // --- INTERACTIVE GEOFENCE PREVIEW MAP ---
-  function initGeoPreviewMap() {
-    if (!geoPreviewMap) {
-      geoPreviewMap = L.map('geoPreviewMap').setView([19.1334, 72.9133], 14);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(geoPreviewMap);
-      geoPreviewMap.on('click', onGeoPreviewMapClick);
-    }
-  }
-
-  function syncDronePathToPreviewMap() {
-    if (!geoPreviewMap) return;
-    if (geoPreviewDronePath) {
-      geoPreviewMap.removeLayer(geoPreviewDronePath);
-      geoPreviewDronePath = null;
-    }
-    if (activeGeoJson && activeGeoJson.features && activeGeoJson.features.length > 0) {
-      geoPreviewDronePath = L.geoJSON(activeGeoJson, {
-        style: { color: '#0284c7', weight: 4, opacity: 0.85 },
-        pointToLayer: function(feature, latlng) {
-          return L.circleMarker(latlng, { radius: 5, fillColor: '#38bdf8', color: '#fff', weight: 1.5, fillOpacity: 0.9 });
-        }
-      }).addTo(geoPreviewMap);
-      geoPreviewMap.fitBounds(geoPreviewDronePath.getBounds(), { padding: [30, 30] });
-    }
-  }
-
-  function centerPreviewOnDrone() {
-    if (geoPreviewDronePath && geoPreviewMap) {
-      geoPreviewMap.fitBounds(geoPreviewDronePath.getBounds(), { padding: [30, 30] });
-    } else if (geoPreviewShapeLayer && geoPreviewMap) {
-      if (geoPreviewShapeLayer.getBounds) {
-        geoPreviewMap.fitBounds(geoPreviewShapeLayer.getBounds(), { padding: [30, 30] });
-      }
-    }
-  }
-
-  function onGeoPreviewMapClick(e) {
-    const lat = e.latlng.lat;
-    const lng = e.latlng.lng;
-    const type = document.getElementById('geoZoneType').value;
-
-    if (type === 'circle') {
-      document.getElementById('geoCenterLat').value = lat.toFixed(6);
-      document.getElementById('geoCenterLon').value = lng.toFixed(6);
-      const radInput = document.getElementById('geoRadius');
-      const radius = parseFloat(radInput.value) || 250;
-      if (!radInput.value) radInput.value = radius;
-      renderCirclePreview(lat, lng, radius);
-    } else {
-      polygonPoints.push([parseFloat(lat.toFixed(6)), parseFloat(lng.toFixed(6))]);
-      document.getElementById('geoCoords').value = JSON.stringify(polygonPoints);
-      document.getElementById('geoPolygonCount').textContent = `${polygonPoints.length} vertices`;
-      renderPolygonPreview(polygonPoints);
-    }
-  }
-
-  function renderCirclePreview(lat, lng, radius) {
-    initGeoPreviewMap();
-    if (geoPreviewShapeLayer) {
-      geoPreviewMap.removeLayer(geoPreviewShapeLayer);
-      geoPreviewShapeLayer = null;
-    }
-    if (geoPreviewMarker) {
-      geoPreviewMap.removeLayer(geoPreviewMarker);
-      geoPreviewMarker = null;
-    }
-
-    geoPreviewMarker = L.marker([lat, lng], { draggable: true }).addTo(geoPreviewMap);
-    geoPreviewMarker.on('drag', function(ev) {
-      const pos = ev.target.getLatLng();
-      document.getElementById('geoCenterLat').value = pos.lat.toFixed(6);
-      document.getElementById('geoCenterLon').value = pos.lng.toFixed(6);
-      if (geoPreviewShapeLayer) {
-        geoPreviewShapeLayer.setLatLng(pos);
-      }
-      document.getElementById('geoInstructionHint').textContent = `Center: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)} (Radius ${radius}m)`;
-    });
-
-    geoPreviewShapeLayer = L.circle([lat, lng], {
-      radius: radius || 250,
-      color: '#ef4444',
-      fillColor: '#ef4444',
-      fillOpacity: 0.25,
-      weight: 2
-    }).addTo(geoPreviewMap);
-
-    document.getElementById('geoInstructionHint').textContent = `Center: ${lat.toFixed(4)}, ${lng.toFixed(4)} (Radius ${radius || 250}m)`;
-  }
-
-  function renderPolygonPreview(coords) {
-    initGeoPreviewMap();
-    if (geoPreviewShapeLayer) {
-      geoPreviewMap.removeLayer(geoPreviewShapeLayer);
-      geoPreviewShapeLayer = null;
-    }
-    if (geoPreviewMarker) {
-      geoPreviewMap.removeLayer(geoPreviewMarker);
-      geoPreviewMarker = null;
-    }
-
-    if (!coords || coords.length === 0) return;
-
-    if (coords.length === 1) {
-      geoPreviewMarker = L.circleMarker(coords[0], { radius: 6, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.8 }).addTo(geoPreviewMap);
-      document.getElementById('geoInstructionHint').textContent = '1 vertex placed. Click more points to close perimeter.';
-    } else {
-      geoPreviewShapeLayer = L.polygon(coords, {
-        color: '#ef4444',
-        fillColor: '#ef4444',
-        fillOpacity: 0.25,
-        weight: 2
-      }).addTo(geoPreviewMap);
-      document.getElementById('geoInstructionHint').textContent = `${coords.length} vertices placed. Ready to save zone.`;
-    }
-  }
-
-  function updateCirclePreviewFromInputs() {
-    const lat = parseFloat(document.getElementById('geoCenterLat').value);
-    const lon = parseFloat(document.getElementById('geoCenterLon').value);
-    const rad = parseFloat(document.getElementById('geoRadius').value) || 250;
-    if (!isNaN(lat) && !isNaN(lon)) {
-      renderCirclePreview(lat, lon, rad);
-    }
-  }
-
-  function updatePolygonPreviewFromTextarea() {
-    try {
-      const parsed = JSON.parse(document.getElementById('geoCoords').value);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        polygonPoints = parsed;
-        document.getElementById('geoPolygonCount').textContent = `${polygonPoints.length} vertices`;
-        renderPolygonPreview(polygonPoints);
-      }
-    } catch (e) {
-      // User is currently typing
-    }
-  }
-
-  function clearGeofencePreview() {
-    polygonPoints = [];
-    document.getElementById('geoCenterLat').value = '';
-    document.getElementById('geoCenterLon').value = '';
-    document.getElementById('geoCoords').value = '';
-    document.getElementById('geoPolygonCount').textContent = '0 vertices';
-    if (geoPreviewShapeLayer && geoPreviewMap) {
-      geoPreviewMap.removeLayer(geoPreviewShapeLayer);
-      geoPreviewShapeLayer = null;
-    }
-    if (geoPreviewMarker && geoPreviewMap) {
-      geoPreviewMap.removeLayer(geoPreviewMarker);
-      geoPreviewMarker = null;
-    }
-    const type = document.getElementById('geoZoneType').value;
-    document.getElementById('geoInstructionHint').textContent = type === 'circle' ? 'Click map to place Center' : 'Click map to place boundary perimeter points';
-  }
-
-  function toggleZoneInputs() {
-    const type = document.getElementById('geoZoneType').value;
-    if (type === 'circle') {
-      document.getElementById('circleInputs').classList.remove('hidden');
-      document.getElementById('polygonInputs').classList.add('hidden');
-      document.getElementById('geoModeBadge').textContent = 'CIRCLE MODE';
-      document.getElementById('geoInstructionHint').textContent = 'Click map to place Center';
-    } else {
-      document.getElementById('circleInputs').classList.add('hidden');
-      document.getElementById('polygonInputs').classList.remove('hidden');
-      document.getElementById('geoModeBadge').textContent = 'POLYGON MODE';
-      document.getElementById('geoInstructionHint').textContent = 'Click map to place boundary perimeter points';
-    }
-    clearGeofencePreview();
-  }
-
-  function openNewCaseModal() { document.getElementById('newCaseModal').classList.remove('hidden'); }
-  function closeNewCaseModal() { document.getElementById('newCaseModal').classList.add('hidden'); }
-
-  function clearDashboardView() {
-    document.getElementById('statPlatform').textContent = '--';
-    document.getElementById('statDistance').textContent = '0 m';
-    document.getElementById('statAltitude').textContent = '0 m';
-    document.getElementById('statViolations').textContent = '0';
-    document.getElementById('statArmed').textContent = '--';
-    document.getElementById('statDisarmed').textContent = '--';
-    document.getElementById('statDuration').textContent = '0 s';
-    document.getElementById('statTelemetry').textContent = '0';
-    document.getElementById('cocBadge').classList.add('hidden');
-    if (flightPathLayer && leafletMap) {
-      leafletMap.removeLayer(flightPathLayer);
-      flightPathLayer = null;
-    }
-    if (zonesLayerGroup) zonesLayerGroup.clearLayers();
-    if (geoPreviewDronePath && geoPreviewMap) {
-      geoPreviewMap.removeLayer(geoPreviewDronePath);
-      geoPreviewDronePath = null;
-    }
-    activeGeoJson = null;
-    clearGeofencePreview();
-    document.getElementById('evidenceTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No evidence ingested yet.</td></tr>';
-    document.getElementById('mediaTableBody').innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No media assets ingested yet.</td></tr>';
-    const mBadge = document.getElementById('mediaCountBadge'); if (mBadge) mBadge.textContent = '0 Media Items';
-    document.getElementById('violationsTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No geofence infringements detected.</td></tr>';
-    document.getElementById('timelineTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No timeline events recorded.</td></tr>';
-    document.getElementById('anomaliesTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No anomalies detected.</td></tr>';
-    document.getElementById('auditTableBody').innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">No audit records found.</td></tr>';
-    document.getElementById('zonesTableBody').innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No geofence perimeters configured.</td></tr>';
-
-    // GCS reset
-    const gcsPlat = document.getElementById('gcsStatPlatform'); if (gcsPlat) gcsPlat.textContent = 'None';
-    const gcsFc = document.getElementById('gcsStatFC'); if (gcsFc) gcsFc.textContent = 'FC: --';
-    const gcsOp = document.getElementById('gcsStatOperator'); if (gcsOp) gcsOp.textContent = 'Not Identified';
-    const gcsSrc = document.getElementById('gcsStatOpSource'); if (gcsSrc) gcsSrc.textContent = 'Source: --';
-    const gcsWp = document.getElementById('gcsStatWaypoints'); if (gcsWp) gcsWp.textContent = '0';
-    const gcsDist = document.getElementById('gcsStatPlanDist'); if (gcsDist) gcsDist.textContent = 'Planned Dist: 0 m';
-    const gcsAdh = document.getElementById('gcsStatAdherence'); if (gcsAdh) gcsAdh.textContent = '-- %';
-    const gcsRch = document.getElementById('gcsStatReached'); if (gcsRch) gcsRch.textContent = '0 / 0 reached';
-    const gcsCount = document.getElementById('gcsWaypointCountBadge'); if (gcsCount) gcsCount.textContent = '0 waypoints';
-    const gcsTbody = document.getElementById('gcsWaypointsTableBody');
-    if (gcsTbody) gcsTbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No GCS mission plan loaded for this case.</td></tr>';
-    if (gcsMapLayers) gcsMapLayers.clearLayers();
-    cachedGcsData = null;
-  }
-
-  async function loadCases() {
-    try {
-      const res = await fetch('/api/cases');
-      const cases = await res.json();
-      const selector = document.getElementById('caseSelector');
-      selector.innerHTML = '';
-      if (cases.length === 0) {
-        selector.innerHTML = '<option value="">-- No Cases Found --</option>';
-        activeCaseId = null;
-        clearDashboardView();
-        return;
-      }
-      cases.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.case_id;
-        opt.textContent = `${c.case_id} — ${c.case_name}`;
-        selector.appendChild(opt);
-      });
-      if (!activeCaseId && cases.length > 0) {
-        activeCaseId = cases[0].case_id;
-      }
-      selector.value = activeCaseId;
-      refreshCaseData();
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  function onCaseChange() {
-    activeCaseId = document.getElementById('caseSelector').value;
-    refreshCaseData();
-  }
-
-  async function submitNewCase() {
-    const cid = document.getElementById('modalCaseId').value.trim();
-    const name = document.getElementById('modalCaseName').value.trim();
-    const inv = document.getElementById('modalInvestigator').value.trim();
-    const agency = document.getElementById('modalAgency').value.trim();
-    const desc = document.getElementById('modalDesc').value.trim();
-
-    if (!cid || !name) { alert('Please enter Case ID and Title'); return; }
-
-    const res = await fetch('/api/cases', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ case_id: cid, case_name: name, investigator_name: inv || 'Examiner', agency_name: agency || 'Forensic Lab', description: desc })
-    });
-
-    if (res.ok) {
-      closeNewCaseModal();
-      activeCaseId = cid;
-      await loadCases();
-    } else {
-      const err = await res.json();
-      alert('Error creating case: ' + err.detail);
-    }
-  }
-
-  async function refreshCaseData() {
-    if (!activeCaseId) return;
-
-    // 1. Fetch Case Overview
-    const caseRes = await fetch(`/api/cases/${activeCaseId}`);
-    const caseInfo = await caseRes.json();
-    document.getElementById('cocBadge').classList.toggle('hidden', !caseInfo.chain_of_custody_verified);
-
-    // 2. Fetch Summary & Stats
-    const sumRes = await fetch(`/api/cases/${activeCaseId}/summary`);
-    const summary = await sumRes.json();
-    document.getElementById('statPlatform').textContent = (summary.platform_detected || 'UNKNOWN').toUpperCase();
-    document.getElementById('statDistance').textContent = `${summary.total_distance_meters} m`;
-    document.getElementById('statAltitude').textContent = `${summary.max_altitude_m} m`;
-    document.getElementById('statViolations').textContent = summary.violations_count;
-    document.getElementById('statArmed').textContent = summary.arm_time_utc ? summary.arm_time_utc.replace('T', ' ').substring(0, 19) + ' UTC' : '--';
-    document.getElementById('statDisarmed').textContent = summary.disarm_time_utc ? summary.disarm_time_utc.replace('T', ' ').substring(0, 19) + ' UTC' : '--';
-    document.getElementById('statDuration').textContent = `${summary.total_duration_sec} s`;
-    document.getElementById('statTelemetry').textContent = summary.telemetry_count;
-
-    // 3. Render Flight Path on Map
-    const geoRes = await fetch(`/api/cases/${activeCaseId}/geojson`);
-    const geoData = await geoRes.json();
-    renderMapData(geoData);
-
-    // 4. Populate Tables
-    loadEvidenceTable();
-    loadMediaTable();
-    loadGeofenceTable();
-    loadViolationsTable();
-    loadTimelineTable();
-    loadAnomaliesTable();
-    loadAuditTable();
-    loadGcsData();
-  }
-
-  function renderMapData(geojson) {
-    activeGeoJson = geojson;
-    initMap();
-    if (flightPathLayer) leafletMap.removeLayer(flightPathLayer);
-
-    if (geojson.features && geojson.features.length > 0) {
-      flightPathLayer = L.geoJSON(geojson, {
-        style: { color: '#38bdf8', weight: 4, opacity: 0.9 },
-        pointToLayer: function(feature, latlng) {
-          return L.circleMarker(latlng, { radius: 6, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 1.0 });
-        }
-      }).addTo(leafletMap);
-
-      leafletMap.fitBounds(flightPathLayer.getBounds(), { padding: [50, 50] });
-    }
-    syncDronePathToPreviewMap();
-  }
-
-  let cachedCatalog = [];
-  let currentCatalogCategory = 'ALL';
-  let currentCatalogRegion = 'ALL';
-  let catalogSearchTerm = '';
-
-  async function loadCatalog() {
-    try {
-      const res = await fetch('/api/geofence/catalog');
-      cachedCatalog = await res.json();
-      const badge = document.getElementById('catalogCountBadge');
-      if (badge) badge.textContent = `${cachedCatalog.length} Real-World Airspaces`;
-      renderCatalogTable();
-    } catch (e) {
-      console.error('Error loading catalog:', e);
-    }
-  }
-
-  function filterCatalogCategory(cat, btn) {
-    currentCatalogCategory = cat;
-    document.querySelectorAll('.catalog-filter-btn').forEach(b => {
-      b.classList.remove('bg-sky-600', 'text-white', 'font-semibold');
-      b.classList.add('bg-slate-800', 'text-slate-300');
-    });
-    if (btn) {
-      btn.classList.add('bg-sky-600', 'text-white', 'font-semibold');
-      btn.classList.remove('bg-slate-800', 'text-slate-300');
-    }
-    renderCatalogTable();
-  }
-
-  function onCatalogRegionChange() {
-    currentCatalogRegion = document.getElementById('catalogRegionSelect').value;
-    renderCatalogTable();
-  }
-
-  function onCatalogSearchInput() {
-    catalogSearchTerm = document.getElementById('catalogSearchInput').value.trim().toLowerCase();
-    renderCatalogTable();
-  }
-
-  function renderCatalogTable() {
-    const tbody = document.getElementById('catalogTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-
-    const filtered = cachedCatalog.filter(item => {
-      if (currentCatalogCategory !== 'ALL' && item.category !== currentCatalogCategory) return false;
-      if (currentCatalogRegion !== 'ALL' && item.city_region !== currentCatalogRegion) return false;
-      if (catalogSearchTerm) {
-        const str = `${item.zone_id} ${item.name} ${item.category} ${item.authority} ${item.city_region} ${item.description}`.toLowerCase();
-        if (!str.includes(catalogSearchTerm)) return false;
-      }
-      return true;
-    });
-
-    if (filtered.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No restricted airspaces match the selected filter.</td></tr>';
-      return;
-    }
-
-    const catIcons = {
-      'AIRPORT': '✈️',
-      'AIRDROME': '🚁',
-      'MILITARY_AIRFORCE': '⚔️',
-      'GOVERNMENT': '🏛️',
-      'STRATEGIC_NUCLEAR': '⚛️',
-      'PRISON': '🔒',
-      'CONTROLLED_BUFFER': '🟡'
-    };
-
-    filtered.forEach(z => {
-      const tr = document.createElement('tr');
-      const isRed = z.zone_class === 'RED' || z.max_altitude_m === 0;
-      const icon = catIcons[z.category] || '🛡️';
-
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-sky-400 font-semibold text-[11px] whitespace-nowrap">${z.zone_id}</td>
-        <td class="p-2.5">
-          <div class="font-medium text-white">${z.name}</div>
-          <div class="text-[10px] text-slate-400 truncate max-w-xs" title="${z.description || ''}">${z.description || ''}</div>
-        </td>
-        <td class="p-2.5 whitespace-nowrap">
-          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 font-medium">${icon} ${z.category}</span>
-          <div class="text-[10px] text-slate-400 mt-0.5">${z.authority || '--'}</div>
-        </td>
-        <td class="p-2.5 text-slate-300 whitespace-nowrap text-[11px]">${z.city_region || '--'}</td>
-        <td class="p-2.5 whitespace-nowrap">
-          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}">
-            ${isRed ? 'RED ZONE (0m)' : `YELLOW (${z.max_altitude_m}m)`}
-          </span>
-        </td>
-        <td class="p-2.5 text-slate-400 whitespace-nowrap text-[11px]">
-          ${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} pts polygon`}
-        </td>
-        <td class="p-2.5 text-right whitespace-nowrap">
-          <button onclick="importPresetIntoCase('${z.zone_id}')" class="bg-sky-700 hover:bg-sky-600 text-white text-[11px] font-semibold px-2.5 py-1 rounded transition shadow">
-            + Add to Case
-          </button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function importPresetIntoCase(presetId) {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first.');
-      return;
-    }
-    try {
-      const res = await fetch(`/api/cases/${activeCaseId}/geofence/import-preset/${presetId}`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        alert(`Imported '${data.zone.name}' into Case ${activeCaseId}!\nBreaches detected: ${data.violations_detected}`);
-        await refreshCaseData();
-      } else {
-        const err = await res.json();
-        alert('Failed to import preset: ' + err.detail);
-      }
-    } catch (e) {
-      alert('Error importing preset: ' + e);
-    }
-  }
-
-  async function loadAllPresetsIntoCase() {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first.');
-      return;
-    }
-    if (!confirm(`Are you sure you want to load all 35+ real-world restricted airspaces into Case ${activeCaseId}?`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/cases/${activeCaseId}/geofence/load-all-presets`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        alert(`Successfully imported ${data.added_count} real-world restricted airspaces!\nTotal zones in case: ${data.total_zones}\nTotal breaches detected: ${data.violations_detected}`);
-        await refreshCaseData();
-      } else {
-        const err = await res.json();
-        alert('Failed to load presets: ' + err.detail);
-      }
-    } catch (e) {
-      alert('Error loading presets: ' + e);
-    }
-  }
-
-  async function loadGeofenceTable() {
-    const res = await fetch(`/api/cases/${activeCaseId}/geofence/zones`);
-    const zones = await res.json();
-    const tbody = document.getElementById('zonesTableBody');
-    tbody.innerHTML = '';
-
-    const countBadge = document.getElementById('activeZonesCountBadge');
-    if (countBadge) countBadge.textContent = `${zones.length} zones configured`;
-
-    if (zonesLayerGroup) zonesLayerGroup.clearLayers();
-
-    const catIcons = {
-      'AIRPORT': '✈️',
-      'AIRDROME': '🚁',
-      'MILITARY_AIRFORCE': '⚔️',
-      'GOVERNMENT': '🏛️',
-      'STRATEGIC_NUCLEAR': '⚛️',
-      'PRISON': '🔒',
-      'CONTROLLED_BUFFER': '🟡'
-    };
-
-    zones.forEach(z => {
-      const tr = document.createElement('tr');
-      const isRed = z.zone_class === 'RED' || z.is_preconfigured_nofly || z.max_altitude_m === 0;
-      const icon = catIcons[z.category] || '🛡️';
-
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-sky-400 font-bold">${z.zone_id}</td>
-        <td class="p-2.5">
-          <div class="font-medium text-white">${z.name}</div>
-          <div class="text-[10px] text-slate-400">${z.description || ''}</div>
-        </td>
-        <td class="p-2.5">
-          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 font-medium">${icon} ${z.category || 'CUSTOM'}</span>
-          <div class="text-[10px] text-slate-400 mt-0.5">${z.authority || (z.city_region || '--')}</div>
-        </td>
-        <td class="p-2.5 text-slate-300">${z.zone_type === 'circle' ? `${(z.radius_meters/1000).toFixed(1)} km radius` : `${z.coordinates.length} vertices polygon`}</td>
-        <td class="p-2.5 text-slate-300 font-mono">${z.max_altitude_m !== null ? z.max_altitude_m + 'm' : 'Unlimited'}</td>
-        <td class="p-2.5">
-          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${isRed ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}">
-            ${isRed ? 'RED ZONE (0m)' : `YELLOW (${z.max_altitude_m}m)`}
-          </span>
-        </td>
-      `;
-      tbody.appendChild(tr);
-
-      // Render zone on Leaflet map with rich popups
-      if (zonesLayerGroup) {
-        const color = isRed ? '#ef4444' : '#f59e0b';
-        const popupHtml = `
-          <div style="font-family: sans-serif; font-size: 11px; min-width: 180px; color: #0f172a;">
-            <div style="font-weight: bold; font-size: 12px; margin-bottom: 2px;">${z.name}</div>
-            <div style="margin-bottom: 4px;">
-              <span style="background: ${isRed ? '#fee2e2' : '#fef3c7'}; color: ${isRed ? '#b91c1c' : '#b45309'}; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 10px;">
-                ${isRed ? 'RED ZONE (0m NO-FLY)' : `YELLOW ZONE (${z.max_altitude_m}m)`}
-              </span>
-              <span style="color: #475569; font-weight: 600; margin-left: 4px;">${z.category || 'RESTRICTED'}</span>
-            </div>
-            ${z.authority ? `<div style="color: #475569; margin-bottom: 2px;">Authority: <strong>${z.authority}</strong></div>` : ''}
-            <div style="color: #64748b;">Max Ceiling: <strong>${z.max_altitude_m !== null ? z.max_altitude_m + 'm AGL' : 'Unlimited'}</strong></div>
-            <div style="color: #64748b; font-size: 10px; margin-top: 3px;">${z.description || ''}</div>
-          </div>
-        `;
-
-        if (z.zone_type === 'circle' && z.center_lat && z.center_lon) {
-          L.circle([z.center_lat, z.center_lon], { radius: z.radius_meters, color: color, fillColor: color, fillOpacity: 0.18, weight: 2 }).bindPopup(popupHtml).addTo(zonesLayerGroup);
-        } else if (z.zone_type === 'polygon' && z.coordinates.length > 0) {
-          L.polygon(z.coordinates, { color: color, fillColor: color, fillOpacity: 0.18, weight: 2 }).bindPopup(popupHtml).addTo(zonesLayerGroup);
-        }
-      }
-    });
-  }
-
-  async function loadViolationsTable() {
-    const res = await fetch(`/api/cases/${activeCaseId}/geofence/violations`);
-    const vios = await res.json();
-    const tbody = document.getElementById('violationsTableBody');
-    tbody.innerHTML = '';
-
-    const badge = document.getElementById('violationsCountBadge');
-    if (badge) badge.textContent = `${vios.length} breaches`;
-
-    if (vios.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No airspace or geofence infringements detected.</td></tr>';
-      return;
-    }
-    vios.forEach(v => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-red-400 font-bold">${v.violation_id}</td>
-        <td class="p-2.5 font-medium text-white">${v.zone_name}</td>
-        <td class="p-2.5 whitespace-nowrap">
-          <span class="px-2 py-0.5 rounded text-[10px] bg-red-950 text-red-300 font-semibold uppercase">${v.category || 'RESTRICTED'}</span>
-          <div class="text-[10px] text-slate-400 mt-0.5">${v.authority || '--'}</div>
-        </td>
-        <td class="p-2.5 text-slate-400 font-mono whitespace-nowrap">${v.timestamp_utc}</td>
-        <td class="p-2.5 text-slate-300 font-mono whitespace-nowrap">${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)}</td>
-        <td class="p-2.5 text-amber-300 font-semibold font-mono whitespace-nowrap">${v.altitude_m.toFixed(1)} m</td>
-        <td class="p-2.5 text-red-300 font-medium">
-          <span class="px-1.5 py-0.5 rounded text-[10px] bg-red-900/60 text-red-200 font-bold mr-1">${v.violation_type}</span>
-          ${v.details}
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function submitNewGeofence() {
-    if (!activeCaseId) { alert('Select an active case first.'); return; }
-    const name = document.getElementById('geoName').value.trim();
-    const type = document.getElementById('geoZoneType').value;
-    const maxAlt = document.getElementById('geoMaxAlt').value ? parseFloat(document.getElementById('geoMaxAlt').value) : null;
-
-    if (!name) { alert('Enter zone name'); return; }
-
-    let payload = { name: name, zone_type: type, max_altitude_m: maxAlt };
-
-    if (type === 'circle') {
-      payload.center_lat = parseFloat(document.getElementById('geoCenterLat').value);
-      payload.center_lon = parseFloat(document.getElementById('geoCenterLon').value);
-      payload.radius_meters = parseFloat(document.getElementById('geoRadius').value);
-    } else {
-      try {
-        payload.coordinates = JSON.parse(document.getElementById('geoCoords').value);
-      } catch (e) {
-        alert('Invalid coordinates JSON'); return;
-      }
-    }
-
-    const res = await fetch(`/api/cases/${activeCaseId}/geofence/zones`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (res.ok) {
-      alert('Geofence zone added and evaluated!');
-      clearGeofencePreview();
-      document.getElementById('geoName').value = '';
-      refreshCaseData();
-    }
-  }
-
-  async function loadEvidenceTable() {
-    const res = await fetch(`/api/cases/${activeCaseId}`);
-    const data = await res.json();
-    const tbody = document.getElementById('evidenceTableBody');
-    tbody.innerHTML = '';
-    // We also can fetch evidence items directly or from report payload
-    const repRes = await fetch(`/api/cases/${activeCaseId}/report/json`);
-    const repData = await repRes.json();
-
-    repData.evidence_items.forEach(ev => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-sky-400 font-bold">${ev.item_id}</td>
-        <td class="p-2.5 font-medium text-white">${ev.file_name}</td>
-        <td class="p-2.5 text-slate-400">${(ev.file_size_bytes/1024).toFixed(1)} KB</td>
-        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] bg-sky-950 text-sky-300 font-bold uppercase">${ev.drone_platform}</span></td>
-        <td class="p-2.5 font-mono text-[11px] text-slate-300">
-          <div><span class="text-slate-500">SHA256:</span> ${ev.hashes.sha256.substring(0,24)}...</div>
-          <div><span class="text-slate-500">SHA3:</span> ${ev.hashes.sha3_256.substring(0,24)}...</div>
-        </td>
-        <td class="p-2.5 text-emerald-400 font-medium">✓ Verified</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function loadTimelineTable() {
-    const res = await fetch(`/api/cases/${activeCaseId}/timeline`);
-    const items = await res.json();
-    const tbody = document.getElementById('timelineTableBody');
-    tbody.innerHTML = '';
-    if (items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No timeline events recorded.</td></tr>';
-      return;
-    }
-    items.forEach(it => {
-      const tr = document.createElement('tr');
-      const evType = (it.event_type || '').toUpperCase();
-      let typeBadge = '';
-      let rowClass = '';
-
-      if (evType === 'MEDIA_CAPTURE') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-700 font-bold uppercase">📷 MEDIA CAPTURE</span>`;
-        rowClass = 'bg-cyan-950/20';
-      } else if (evType === 'ARM' || evType === 'ARMED') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold uppercase">ARMED</span>`;
-        rowClass = 'bg-emerald-950/20';
-      } else if (evType === 'DISARM' || evType === 'DISARMED') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 border border-amber-700 font-bold uppercase">DISARMED</span>`;
-        rowClass = 'bg-amber-950/20';
-      } else if (evType === 'TAKEOFF') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-sky-950 text-sky-300 border border-sky-800 font-bold uppercase">TAKEOFF</span>`;
-      } else if (evType === 'LANDING' || evType === 'LAND') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold uppercase">LANDING</span>`;
-      } else if (it.category === 'GEOFENCE_BREACH') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-red-950 text-red-300 border border-red-800 font-bold uppercase">BREACH</span>`;
-      } else if (it.category === 'ANOMALY') {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-purple-950 text-purple-300 border border-purple-800 font-bold uppercase">ANOMALY</span>`;
-      } else {
-        typeBadge = `<span class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-sky-300 uppercase">${it.category}</span>`;
-      }
-
-      if (rowClass) tr.className = rowClass;
-
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-slate-300">${it.timestamp_utc}</td>
-        <td class="p-2.5">${typeBadge}</td>
-        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] ${it.severity === 'CRITICAL' ? 'bg-red-950 text-red-300 border border-red-800 font-bold' : (it.severity === 'WARNING' ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-slate-800 text-slate-400')}">${it.severity}</span></td>
-        <td class="p-2.5 text-white font-medium">${it.description}</td>
-        <td class="p-2.5 text-slate-400 font-mono">${it.latitude !== null && it.latitude !== undefined ? `${it.latitude.toFixed(5)}, ${it.longitude.toFixed(5)} (${it.altitude_m !== null && it.altitude_m !== undefined ? it.altitude_m.toFixed(1) : 0}m)` : 'System / Telemetry'}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function loadAnomaliesTable() {
-    const res = await fetch(`/api/cases/${activeCaseId}/anomalies`);
-    const anoms = await res.json();
-    const tbody = document.getElementById('anomaliesTableBody');
-    tbody.innerHTML = '';
-    if (anoms.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-500">No anomalies detected. Integrity intact.</td></tr>';
-      return;
-    }
-    anoms.forEach(a => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-amber-400 font-bold">${a.anomaly_id}</td>
-        <td class="p-2.5 text-white font-medium">${a.anomaly_type}</td>
-        <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] bg-amber-950 text-amber-300 uppercase font-bold">${a.severity}</span></td>
-        <td class="p-2.5 font-mono text-slate-400">${a.timestamp_utc || 'N/A'}</td>
-        <td class="p-2.5 text-slate-300">${a.description}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function loadAuditTable() {
-    const res = await fetch(`/api/cases/${activeCaseId}/audit-trail`);
-    const logs = await res.json();
-    const tbody = document.getElementById('auditTableBody');
-    tbody.innerHTML = '';
-    logs.forEach(l => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="p-2.5 font-mono text-slate-500">#${l.entry_id}</td>
-        <td class="p-2.5 font-mono text-slate-400">${l.timestamp_utc}</td>
-        <td class="p-2.5 font-medium text-white">${l.actor}</td>
-        <td class="p-2.5 text-sky-400 font-semibold">${l.action}</td>
-        <td class="p-2.5 text-slate-300">${l.details}</td>
-        <td class="p-2.5 font-mono text-[10px] text-emerald-400">${l.signature.substring(0,16)}...</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  async function verifyChainOfCustody() {
-    const res = await fetch(`/api/cases/${activeCaseId}`);
-    const data = await res.json();
-    if (data.chain_of_custody_verified) {
-      alert('Chain-of-Custody Cryptographic Integrity: 100% UNCOMPROMISED.\nAll HMAC signatures and cryptographic pointers are valid.');
-    } else {
-      alert('Chain-of-Custody Compromised! ' + data.chain_error);
-    }
-  }
-
-  async function uploadEvidence() {
-    const fileInput = document.getElementById('evidenceFileInput');
-    if (!fileInput.files || fileInput.files.length === 0) {
-      alert('Please select an evidence file to ingest.');
-      return;
-    }
-    const mode = document.getElementById('acqMode').value;
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    formData.append('acquisition_type', mode);
-    formData.append('actor', 'Forensic Investigator');
-
-    const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (res.ok) {
-      alert('Evidence successfully ingested, hashed, write-blocked, and parsed!');
-      fileInput.value = '';
-      refreshCaseData();
-    } else {
-      const err = await res.json();
-      alert('Error ingesting evidence: ' + err.detail);
-    }
-  }
-
-  async function uploadMediaFiles() {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first.');
-      return;
-    }
-    const input = document.getElementById('mediaFilesInput');
-    if (!input.files || input.files.length === 0) {
-      alert('Please select one or more media files (.mp4, .mov, .jpg, etc.) to ingest.');
-      return;
-    }
-
-    const files = Array.from(input.files);
-    const btn = document.getElementById('uploadMediaBtn');
-    const spinner = document.getElementById('uploadMediaBtnSpinner');
-    const alertBox = document.getElementById('mediaUploadAlert');
-
-    btn.disabled = true;
-    spinner.classList.remove('hidden');
-    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
-    alertBox.textContent = `Ingesting, write-blocking and synchronizing ${files.length} media file(s)...`;
-
-    let syncedCount = 0;
-    let failedCount = 0;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const formData = new FormData();
-      formData.append('file', file);
-      if (file.lastModified) {
-        formData.append('capture_timestamp', new Date(file.lastModified).toISOString());
-      }
-      formData.append('actor', 'Forensic Investigator');
-
-      try {
-        const res = await fetch(`/api/cases/${activeCaseId}/ingest-media`, {
-          method: 'POST',
-          body: formData
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.has_overlap) syncedCount++;
-        } else {
-          failedCount++;
-        }
-      } catch (e) {
-        failedCount++;
-      }
-    }
-
-    btn.disabled = false;
-    spinner.classList.add('hidden');
-    input.value = '';
-
-    alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
-    alertBox.innerHTML = `✓ <strong>Media Processing Complete!</strong> Ingested <strong>${files.length - failedCount}</strong> file(s). <strong>${syncedCount}</strong> synchronized with flight telemetry and injected into the master timeline.`;
-
-    await refreshCaseData();
-  }
-
-  async function loadMediaTable() {
-    if (!activeCaseId) return;
-    try {
-      const res = await fetch(`/api/cases/${activeCaseId}/media`);
-      if (!res.ok) return;
-      const mediaList = await res.json();
-      const tbody = document.getElementById('mediaTableBody');
-      const badge = document.getElementById('mediaCountBadge');
-      if (badge) badge.textContent = `${mediaList.length} Media Item${mediaList.length === 1 ? '' : 's'}`;
-
-      tbody.innerHTML = '';
-      if (mediaList.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No media assets ingested yet.</td></tr>';
-        return;
-      }
-
-      mediaList.forEach(m => {
-        const tr = document.createElement('tr');
-        const isSynced = m.has_telemetry_overlap;
-        const durText = m.duration_sec ? ` (${m.duration_sec}s)` : '';
-        const thumbSrc = m.thumbnail_base64
-          ? `data:image/jpeg;base64,${m.thumbnail_base64}`
-          : `/api/cases/${activeCaseId}/media/${m.item_id}/thumbnail`;
-
-        const typeBadgeClass = m.media_type === 'VIDEO'
-          ? 'bg-purple-950 text-purple-300 border-purple-800'
-          : 'bg-blue-950 text-blue-300 border-blue-800';
-
-        const syncBadge = isSynced
-          ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-bold">✓ SYNCHRONIZED</span>
-             <div class="text-[10px] text-slate-400 mt-1 font-mono">${m.matched_latitude !== null && m.matched_longitude !== null ? `${m.matched_latitude.toFixed(5)}, ${m.matched_longitude.toFixed(5)} (${m.matched_altitude_m !== null ? m.matched_altitude_m.toFixed(1) : 0}m)` : '--'}</div>
-             <div class="text-[10px] text-emerald-400">Δ ${m.time_delta_sec !== null ? m.time_delta_sec + 's' : '0s'}</div>
-             ${(m.has_e01 || m.e01_path) ? `
-             <div class="mt-1.5 flex items-center space-x-1.5">
-               <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-700 font-mono font-semibold">🔒 .EO1 SAVED</span>
-               <a href="/api/cases/${activeCaseId}/media/${m.item_id}/e01" download class="text-[10px] text-sky-400 hover:text-sky-300 hover:underline">⬇ Download</a>
-             </div>` : ''}`
-          : `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">NO OVERLAP</span>
-             <div class="text-[10px] text-slate-500 mt-1">Outside flight window</div>`;
-
-        const thumbHtml = m.thumbnail_base64
-          ? `<div class="cursor-pointer group relative w-16 h-12 rounded overflow-hidden border border-slate-700 bg-slate-950 flex items-center justify-center" onclick="openMediaLightbox('${m.item_id}')">
-               <img src="${thumbSrc}" alt="${m.file_name}" class="w-full h-full object-cover group-hover:scale-105 transition" />
-               <span class="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] text-white">🔍</span>
-             </div>`
-          : `<span class="text-[10px] text-slate-500">No preview</span>`;
-
-        tr.innerHTML = `
-          <td class="p-2.5 font-mono text-sky-400 font-bold">${m.item_id}</td>
-          <td class="p-2.5">${thumbHtml}</td>
-          <td class="p-2.5">
-            <div class="font-medium text-white">${m.file_name}</div>
-            <div class="flex items-center space-x-2 mt-1">
-              <span class="px-1.5 py-0.5 rounded text-[10px] border ${typeBadgeClass} font-semibold">${m.media_type}${durText}</span>
-              <span class="text-[10px] text-slate-400">${(m.file_size_bytes / 1024).toFixed(1)} KB</span>
-            </div>
-          </td>
-          <td class="p-2.5 font-mono text-slate-300 text-[11px]">${m.capture_timestamp_utc ? m.capture_timestamp_utc.replace('T', ' ').substring(0, 19) + ' UTC' : 'N/A'}</td>
-          <td class="p-2.5">${syncBadge}</td>
-          <td class="p-2.5 font-mono text-[11px] text-slate-300">
-            <div><span class="text-slate-500">SHA256:</span> ${m.hashes.sha256.substring(0, 20)}...</div>
-          </td>
-          <td class="p-2.5">
-            <button onclick="openMediaLightbox('${m.item_id}')" class="bg-slate-800 hover:bg-slate-700 text-sky-400 text-[11px] px-2.5 py-1 rounded transition">
-              Inspect Frame
-            </button>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    } catch (e) {
-      console.error('Error loading media table:', e);
-    }
-  }
-
-  async function openMediaLightbox(itemId) {
-    if (!activeCaseId) return;
-    try {
-      const res = await fetch(`/api/cases/${activeCaseId}/media`);
-      if (!res.ok) return;
-      const list = await res.json();
-      const item = list.find(m => m.item_id === itemId);
-      if (!item) return;
-
-      document.getElementById('modalMediaTitle').textContent = `📷 ${item.file_name} (${item.media_type})`;
-      const imgSrc = item.thumbnail_base64
-        ? `data:image/jpeg;base64,${item.thumbnail_base64}`
-        : `/api/cases/${activeCaseId}/media/${item.item_id}/thumbnail`;
-      document.getElementById('modalMediaImg').src = imgSrc;
-      document.getElementById('modalMediaTimestamp').textContent = item.capture_timestamp_utc || 'N/A';
-      document.getElementById('modalMediaCoords').textContent = (item.matched_latitude !== null && item.matched_longitude !== null)
-        ? `${item.matched_latitude.toFixed(6)}, ${item.matched_longitude.toFixed(6)} (Alt: ${item.matched_altitude_m !== null ? item.matched_altitude_m : 0}m)`
-        : (item.has_telemetry_overlap ? 'Synchronized' : 'No telemetry overlap');
-      document.getElementById('modalMediaDelta').textContent = item.has_telemetry_overlap
-        ? `Δ ${item.time_delta_sec !== null ? item.time_delta_sec + 's' : '0s'} to nearest telemetry point`
-        : 'N/A (Outside flight interval)';
-      document.getElementById('modalMediaHash').textContent = item.hashes.sha256;
-
-      const e01El = document.getElementById('modalMediaE01');
-      if (e01El) {
-        if (item.has_e01 || item.e01_path) {
-          const fname = item.e01_path ? item.e01_path.split(/[\\/]/).pop() : (item.file_name.replace(/\.[^/.]+$/, "") + ".eo1");
-          e01El.innerHTML = `<span class="text-emerald-400 font-bold">🔒 ${fname}</span> <a href="/api/cases/${activeCaseId}/media/${item.item_id}/e01" download class="ml-2 text-sky-400 hover:underline font-normal text-[11px]">(Download .eo1)</a>`;
-        } else {
-          e01El.textContent = 'None (Telemetry overlap required)';
-        }
-      }
-
-      document.getElementById('mediaLightboxModal').classList.remove('hidden');
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  function closeMediaLightbox() {
-    document.getElementById('mediaLightboxModal').classList.add('hidden');
-    document.getElementById('modalMediaImg').src = '';
-  }
-
-  async function loadSampleMedia(mediaKey) {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first. (Tip: You can load the DJI Mavic 3 sample flight log in the section above first!)');
-      return;
-    }
-    let sampleFile = '';
-    if (mediaKey === 'video') {
-      sampleFile = 'sample_recon_video.mp4';
-    } else if (mediaKey === 'photo') {
-      sampleFile = 'sample_aerial_photo.jpg';
-    } else if (mediaKey === 'unrelated') {
-      sampleFile = 'sample_unrelated_photo.jpg';
-    }
-
-    const alertBox = document.getElementById('mediaUploadAlert');
-    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
-    alertBox.textContent = `Fetching sample '${sampleFile}' and analyzing telemetry synchronization...`;
-
-    try {
-      const blobRes = await fetch(`/samples/${sampleFile}`);
-      if (!blobRes.ok) {
-        alert('Could not locate sample file: ' + sampleFile);
-        return;
-      }
-      const blob = await blobRes.blob();
-      const formData = new FormData();
-      formData.append('file', blob, sampleFile);
-      formData.append('actor', 'Forensic Examiner (Sample Benchmark)');
-
-      const res = await fetch(`/api/cases/${activeCaseId}/ingest-media`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
-        if (data.has_overlap) {
-          alertBox.innerHTML = `✓ <strong>Sample Ingested & Synchronized!</strong> File <code>${sampleFile}</code> overlaps the telemetry window. Representative frame was extracted and a <strong>MEDIA_CAPTURE</strong> event was injected into the master timeline!`;
-        } else {
-          alertBox.innerHTML = `ℹ️ <strong>Sample Ingested (No Overlap)</strong> File <code>${sampleFile}</code> was write-blocked and hashed, but its timestamp (2026-08-15) falls outside the active flight window.`;
-        }
-        await refreshCaseData();
-      } else {
-        const err = await res.json();
-        alert('Error ingesting sample media: ' + err.detail);
-      }
-    } catch (e) {
-      alert('Error loading sample media: ' + e);
-    }
-  }
-
-  async function loadSample(platform) {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first.');
-      return;
-    }
-    let sampleFile = '';
-    if (platform === 'dji') sampleFile = 'dji_mavic3_telemetry.srt';
-    else if (platform === 'ardupilot') sampleFile = 'ardupilot_flight.log';
-    else if (platform === 'px4') sampleFile = 'px4_mission.csv';
-    else if (platform === 'parrot') sampleFile = 'parrot_anafi_flight.json';
-    else if (platform === 'betaflight') sampleFile = 'betaflight_blackbox.txt';
-
-    // Fetch sample from static endpoint or ingest
-    const blobRes = await fetch(`/samples/${sampleFile}`);
-    if (!blobRes.ok) {
-      alert('Could not locate sample file: ' + sampleFile);
-      return;
-    }
-    const blob = await blobRes.blob();
-    const formData = new FormData();
-    formData.append('file', blob, sampleFile);
-    formData.append('acquisition_type', 'LOGICAL_EXTRACT');
-    formData.append('actor', 'Automated Ingestion Worker');
-
-    const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (res.ok) {
-      alert(`Sample evidence for ${platform.toUpperCase()} ingested and parsed!`);
-      refreshCaseData();
-    }
-  }
-
-  function downloadReport(format) {
-    if (!activeCaseId) return;
-    if (format === 'html') {
-      window.open(`/api/cases/${activeCaseId}/report/html`, '_blank');
-    } else if (format === 'json') {
-      window.open(`/api/cases/${activeCaseId}/report/json`, '_blank');
-    } else if (format === 'kml') {
-      window.open(`/api/cases/${activeCaseId}/kml`, '_blank');
-    } else if (format === 'dfxml') {
-      window.open(`/api/cases/${activeCaseId}/report/dfxml`, '_blank');
-    }
-  }
-
-  // --- GCS & OPERATOR FORENSIC ANALYSIS ---
-  function initGcsMap() {
-    if (!gcsMap) {
-      gcsMap = L.map('gcsMap').setView([19.1334, 72.9133], 14);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(gcsMap);
-      gcsMapLayers = L.layerGroup().addTo(gcsMap);
-    }
-  }
-
-  async function loadGcsData() {
-    if (!activeCaseId) return;
-    try {
-      const res = await fetch(`/api/cases/${activeCaseId}/gcs`);
-      if (!res.ok) {
-        cachedGcsData = null;
-        renderGcsMap();
-        return;
-      }
-      const data = await res.json();
-      cachedGcsData = data;
-
-      const gcsName = (data.detected_gcs && data.detected_gcs !== 'NONE') ? data.detected_gcs : (data.gcs_software || 'None');
-      const targetFc = (data.associated_fc && data.associated_fc !== 'NONE') ? data.associated_fc : '';
-      const op = (data.operator_locations && data.operator_locations.length > 0) ? data.operator_locations[0] : (data.operator_location || null);
-      const plan = (data.mission_plans && data.mission_plans.length > 0) ? data.mission_plans[0] : (data.mission_plan || null);
-      const tc = data.mission_comparison || data.trajectory_comparison || null;
-
-      // 1. Stats
-      const gcsPlat = document.getElementById('gcsStatPlatform');
-      if (gcsPlat) gcsPlat.textContent = gcsName;
-
-      const gcsFc = document.getElementById('gcsStatFC');
-      if (gcsFc) {
-        if (targetFc) {
-          gcsFc.textContent = `FC: ${targetFc}`;
-        } else {
-          let fc = 'FC: General UAV';
-          const s = (gcsName || '').toLowerCase();
-          if (s.includes('mission planner') || s.includes('mavproxy')) fc = 'FC: ArduPilot (Pixhawk/Cube)';
-          else if (s.includes('qgroundcontrol')) fc = 'FC: PX4 / ArduPilot';
-          else if (s.includes('dji')) fc = 'FC: DJI Enterprise / Consumer';
-          else if (s.includes('inav') || s.includes('mwp')) fc = 'FC: Betaflight / iNav FPV';
-          else if (s.includes('parrot')) fc = 'FC: Parrot FreeFlight';
-          gcsFc.textContent = fc;
-        }
-      }
-
-      const gcsOp = document.getElementById('gcsStatOperator');
-      const gcsSrc = document.getElementById('gcsStatOpSource');
-      if (op) {
-        if (gcsOp) gcsOp.textContent = `${op.latitude.toFixed(6)}, ${op.longitude.toFixed(6)}`;
-        if (gcsSrc) gcsSrc.textContent = `Alt: ${op.altitude_m !== null && op.altitude_m !== undefined ? op.altitude_m : 0}m (${op.source || 'Header'})`;
-      } else {
-        if (gcsOp) gcsOp.textContent = 'Not Identified';
-        if (gcsSrc) gcsSrc.textContent = 'Source: --';
-      }
-
-      const gcsWp = document.getElementById('gcsStatWaypoints');
-      const gcsDist = document.getElementById('gcsStatPlanDist');
-      if (plan) {
-        const wpCount = plan.waypoints ? plan.waypoints.length : (plan.waypoint_count || 0);
-        if (gcsWp) gcsWp.textContent = wpCount;
-        if (gcsDist) gcsDist.textContent = `Planned Dist: ${plan.total_planned_distance_m} m`;
-      } else {
-        if (gcsWp) gcsWp.textContent = '0';
-        if (gcsDist) gcsDist.textContent = 'Planned Dist: 0 m';
-      }
-
-      const gcsAdh = document.getElementById('gcsStatAdherence');
-      const gcsRch = document.getElementById('gcsStatReached');
-      if (tc) {
-        const score = tc.compliance_score_pct !== undefined ? tc.compliance_score_pct : tc.adherence_score_pct;
-        if (gcsAdh) gcsAdh.textContent = `${score}%`;
-        if (gcsRch) gcsRch.textContent = `${tc.waypoints_reached} / ${tc.waypoints_total} reached (Mean Dev: ${tc.mean_deviation_meters}m)`;
-      } else {
-        if (gcsAdh) gcsAdh.textContent = '-- %';
-        const count = plan && plan.waypoints ? plan.waypoints.length : 0;
-        if (gcsRch) gcsRch.textContent = count > 0 ? `${count} planned (No telemetry overlay)` : '0 / 0 reached';
-      }
-
-      // 2. Waypoints Table
-      const tbody = document.getElementById('gcsWaypointsTableBody');
-      const countBadge = document.getElementById('gcsWaypointCountBadge');
-      if (plan && plan.waypoints && plan.waypoints.length > 0) {
-        const wps = plan.waypoints;
-        if (countBadge) countBadge.textContent = `${wps.length} waypoints`;
-        tbody.innerHTML = '';
-        const reachedCount = tc ? tc.waypoints_reached : null;
-
-        wps.forEach(wp => {
-          const tr = document.createElement('tr');
-          const wpIdx = wp.index !== undefined ? wp.index : wp.sequence;
-          const wpCmd = wp.command || wp.action || 'WAYPOINT';
-          let statusBadge = '<span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">PLANNED</span>';
-          if (reachedCount !== null) {
-            if (wpIdx <= reachedCount) {
-              statusBadge = '<span class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold text-[10px] font-mono">✓ REACHED</span>';
-            } else {
-              statusBadge = '<span class="px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 font-bold text-[10px] font-mono">DEVIATED</span>';
-            }
-          }
-
-          const spdText = (wp.speed_mps !== null && wp.speed_mps !== undefined) ? `${wp.speed_mps.toFixed(1)} m/s` : '--';
-          const holdText = wp.param1 ? `${wp.param1}s` : (wp.hold_time_sec ? `${wp.hold_time_sec}s` : '0s');
-
-          tr.innerHTML = `
-            <td class="p-2.5 font-mono text-cyan-400 font-bold text-center">#${wpIdx}</td>
-            <td class="p-2.5 font-medium text-white">${wpCmd}</td>
-            <td class="p-2.5 font-mono text-slate-300">${wp.latitude.toFixed(6)}, ${wp.longitude.toFixed(6)}</td>
-            <td class="p-2.5 font-mono text-slate-200">${wp.altitude_m.toFixed(1)} m</td>
-            <td class="p-2.5 font-mono text-slate-300">${spdText}</td>
-            <td class="p-2.5 font-mono text-slate-400">${holdText}</td>
-            <td class="p-2.5">${statusBadge}</td>
-          `;
-          tbody.appendChild(tr);
-        });
-      } else {
-        if (countBadge) countBadge.textContent = '0 waypoints';
-        tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-slate-500">No GCS mission plan loaded for this case.</td></tr>';
-      }
-
-      renderGcsMap();
-    } catch (e) {
-      console.error('Error loading GCS data:', e);
-    }
-  }
-
-  function renderGcsMap() {
-    initGcsMap();
-    if (!gcsMap || !gcsMapLayers) return;
-    gcsMapLayers.clearLayers();
-
-    let hasBounds = false;
-    let bounds = L.latLngBounds();
-
-    // 1. Overlay Flown Telemetry
-    if (activeGeoJson && activeGeoJson.features && activeGeoJson.features.length > 0) {
-      const flownLayer = L.geoJSON(activeGeoJson, {
-        style: { color: '#0284c7', weight: 4, opacity: 0.85 },
-        pointToLayer: function(feature, latlng) {
-          return L.circleMarker(latlng, { radius: 4, fillColor: '#38bdf8', color: '#fff', weight: 1, fillOpacity: 0.9 });
-        }
-      });
-      flownLayer.addTo(gcsMapLayers);
-      bounds.extend(flownLayer.getBounds());
-      hasBounds = true;
-    }
-
-    const plan = cachedGcsData ? ((cachedGcsData.mission_plans && cachedGcsData.mission_plans.length > 0) ? cachedGcsData.mission_plans[0] : (cachedGcsData.mission_plan || null)) : null;
-    const op = cachedGcsData ? ((cachedGcsData.operator_locations && cachedGcsData.operator_locations.length > 0) ? cachedGcsData.operator_locations[0] : (cachedGcsData.operator_location || null)) : null;
-
-    // 2. Overlay Planned Waypoints
-    if (plan && plan.waypoints && plan.waypoints.length > 0) {
-      const wps = plan.waypoints;
-      const pts = wps.map(w => [w.latitude, w.longitude]);
-
-      // Connect waypoints with dashed cyan flight path line
-      L.polyline(pts, {
-        color: '#06b6d4',
-        weight: 3,
-        dashArray: '6, 8',
-        opacity: 0.9
-      }).addTo(gcsMapLayers);
-
-      wps.forEach(wp => {
-        const wpIdx = wp.index !== undefined ? wp.index : wp.sequence;
-        const wpCmd = wp.command || wp.action || 'NAV';
-        const wpIcon = L.divIcon({
-          className: 'custom-wp-pin',
-          html: `<div style="background:#06b6d4; color:#020617; font-weight:bold; font-size:10px; border-radius:9999px; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border:1.5px solid #ffffff; box-shadow:0 2px 4px rgba(0,0,0,0.5);">${wpIdx}</div>`,
-          iconSize: [20, 20],
-          iconAnchor: [10, 10]
-        });
-
-        const m = L.marker([wp.latitude, wp.longitude], { icon: wpIcon })
-          .bindPopup(`<strong>Waypoint #${wpIdx}</strong><br/>Command: ${wpCmd}<br/>Coords: ${wp.latitude.toFixed(6)}, ${wp.longitude.toFixed(6)}<br/>Planned Alt: ${wp.altitude_m}m`);
-        m.addTo(gcsMapLayers);
-        bounds.extend([wp.latitude, wp.longitude]);
-        hasBounds = true;
-      });
-    }
-
-    // 3. Overlay Operator / GCS Launch Marker
-    if (op) {
-      const opIcon = L.divIcon({
-        className: 'custom-op-pin',
-        html: `<div style="background:#10b981; color:#ffffff; font-size:14px; border-radius:9999px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:2px solid #ffffff; box-shadow:0 0 12px rgba(16,185,129,0.8);">🎮</div>`,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
-      });
-
-      const m = L.marker([op.latitude, op.longitude], { icon: opIcon })
-        .bindPopup(`<strong>🎯 Operator / Ground Control Station</strong><br/>Coords: ${op.latitude.toFixed(6)}, ${op.longitude.toFixed(6)}<br/>Altitude: ${op.altitude_m !== null && op.altitude_m !== undefined ? op.altitude_m : 0}m<br/>Source: ${op.source || 'GCS Header'}`);
-      m.addTo(gcsMapLayers);
-      bounds.extend([op.latitude, op.longitude]);
-      hasBounds = true;
-    }
-
-    if (hasBounds) {
-      gcsMap.fitBounds(bounds, { padding: [40, 40] });
-    }
-  }
-
-  async function uploadGcsArtifact() {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first.');
-      return;
-    }
-    const input = document.getElementById('gcsFileInput');
-    if (!input.files || input.files.length === 0) {
-      alert('Please choose a GCS evidence file to upload.');
-      return;
-    }
-    const file = input.files[0];
-    const btn = document.getElementById('uploadGcsBtn');
-    const spinner = document.getElementById('uploadGcsBtnSpinner');
-    const alertBox = document.getElementById('gcsUploadAlert');
-
-    btn.disabled = true;
-    spinner.classList.remove('hidden');
-    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
-    alertBox.innerHTML = `Ingesting GCS artifact <strong>${file.name}</strong>...`;
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('acquisition_type', 'LOGICAL_EXTRACT');
-      formData.append('actor', 'GCS Forensic Analyst');
-
-      const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const plat = (data.platform_detected || data.platform || 'UNKNOWN').toUpperCase();
-        alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
-        alertBox.innerHTML = `✓ <strong>GCS Evidence Ingested!</strong> File <code>${file.name}</code> processed. Platform: <strong>${plat}</strong>. Cryptographic hashes logged to Chain of Custody.`;
-        input.value = '';
-        await refreshCaseData();
-      } else {
-        const err = await res.json();
-        alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
-        alertBox.innerHTML = `❌ Error ingesting file: ${err.detail || 'Unknown error'}`;
-      }
-    } catch (e) {
-      alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
-      alertBox.innerHTML = `❌ Network or processing error: ${e.message}`;
-    } finally {
-      btn.disabled = false;
-      spinner.classList.add('hidden');
-    }
-  }
-
-  async function loadSampleGcs(sampleFile) {
-    if (!activeCaseId) {
-      alert('Please select or create an active case first.');
-      return;
-    }
-    const alertBox = document.getElementById('gcsUploadAlert');
-    alertBox.className = 'p-3 rounded-lg text-xs bg-sky-950/80 border border-sky-800 text-sky-200 block';
-    alertBox.innerHTML = `Fetching sample GCS file <strong>${sampleFile}</strong> and parsing mission trajectory...`;
-
-    try {
-      const blobRes = await fetch(`/samples/${sampleFile}`);
-      if (!blobRes.ok) {
-        alert('Could not locate sample file: ' + sampleFile);
-        return;
-      }
-      const blob = await blobRes.blob();
-      const formData = new FormData();
-      formData.append('file', blob, sampleFile);
-      formData.append('acquisition_type', 'LOGICAL_EXTRACT');
-      formData.append('actor', 'GCS Benchmark Examiner');
-
-      const res = await fetch(`/api/cases/${activeCaseId}/ingest`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const plat = (data.platform_detected || data.platform || 'GCS').toUpperCase();
-        alertBox.className = 'p-3 rounded-lg text-xs bg-emerald-950/80 border border-emerald-800 text-emerald-200 block';
-        alertBox.innerHTML = `✓ <strong>Sample GCS Evidence Ingested!</strong> File <code>${sampleFile}</code> processed. Platform: <strong>${plat}</strong>. Cryptographic hashes logged to Chain of Custody.`;
-        await refreshCaseData();
-      } else {
-        const err = await res.json();
-        alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
-        alertBox.innerHTML = `❌ Error ingesting sample file: ${err.detail || 'Unknown error'}`;
-      }
-    } catch (e) {
-      alertBox.className = 'p-3 rounded-lg text-xs bg-red-950/80 border border-red-800 text-red-200 block';
-      alertBox.innerHTML = `❌ Network or processing error: ${e.message}`;
-    }
-  }
-
-  // Startup
-  window.onload = async () => {
-    initMap();
-    await loadCases();
-    await loadCatalog();
-  };
-</script>
-
 <!-- MEDIA FRAME LIGHTBOX & METADATA MODAL -->
-<div id="mediaLightboxModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-  <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full p-5 space-y-4 shadow-2xl">
-    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-      <h3 id="modalMediaTitle" class="text-sm font-bold text-white flex items-center space-x-2">
+<div id="mediaLightboxModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-md z-50 hidden flex items-center justify-center p-3 sm:p-4">
+  <div class="bg-white/95 border border-slate-200/90 rounded-2xl max-w-2xl w-full p-4 sm:p-5 space-y-4 shadow-2xl max-h-[95vh] overflow-y-auto glass-panel">
+    <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+      <h3 id="modalMediaTitle" class="text-sm font-bold text-slate-900 flex items-center space-x-2">
         <span>📷 Extracted Media Frame</span>
       </h3>
-      <button onclick="closeMediaLightbox()" class="text-slate-400 hover:text-white text-base">✕</button>
+      <button onclick="closeMediaLightbox()" class="text-slate-400 hover:text-slate-700 text-lg p-1 rounded-lg">✕</button>
     </div>
-    <div class="flex justify-center bg-slate-950 rounded-lg p-2 border border-slate-800">
-      <img id="modalMediaImg" src="" alt="Frame preview" class="max-h-80 object-contain rounded" />
+    <div class="flex justify-center bg-slate-100 rounded-xl p-2 border border-slate-200">
+      <img id="modalMediaImg" src="" alt="Frame preview" class="max-h-80 object-contain rounded-lg shadow-sm" />
     </div>
-    <div class="grid grid-cols-2 gap-3 text-xs">
-      <div class="bg-slate-950 p-3 rounded border border-slate-800 space-y-1">
-        <div class="text-slate-400">Capture Timestamp (UTC)</div>
-        <div id="modalMediaTimestamp" class="font-mono text-white font-medium">--</div>
-        <div class="text-slate-400 mt-2">Telemetry Synchronized Coordinates</div>
-        <div id="modalMediaCoords" class="font-mono text-sky-400 font-medium">--</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+      <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+        <div class="text-slate-500 text-[10px] uppercase font-semibold">Capture Timestamp (UTC)</div>
+        <div id="modalMediaTimestamp" class="font-mono text-slate-900 font-medium text-xs">--</div>
+        <div class="text-slate-500 text-[10px] uppercase font-semibold mt-2">Telemetry Synchronized Coordinates</div>
+        <div id="modalMediaCoords" class="font-mono text-sky-700 font-medium text-xs">--</div>
       </div>
-      <div class="bg-slate-950 p-3 rounded border border-slate-800 space-y-1">
-        <div class="text-slate-400">Telemetry Sync Delta</div>
-        <div id="modalMediaDelta" class="text-emerald-400 font-medium font-mono">--</div>
-        <div class="text-slate-400 mt-2">SHA-256 Hash</div>
-        <div id="modalMediaHash" class="font-mono text-slate-300 text-[11px] truncate">--</div>
-        <div class="text-slate-400 mt-2">Forensic E01 Container</div>
-        <div id="modalMediaE01" class="font-mono text-emerald-400 text-[11px] truncate">--</div>
+      <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+        <div class="text-slate-500 text-[10px] uppercase font-semibold">Telemetry Sync Delta</div>
+        <div id="modalMediaDelta" class="text-emerald-700 font-medium font-mono text-xs">--</div>
+        <div class="text-slate-500 text-[10px] uppercase font-semibold mt-2">SHA-256 Hash</div>
+        <div id="modalMediaHash" class="font-mono text-slate-700 text-[11px] truncate">--</div>
+        <div class="text-slate-500 text-[10px] uppercase font-semibold mt-2">Forensic E01 Container</div>
+        <div id="modalMediaE01" class="font-mono text-emerald-700 text-[11px] truncate">--</div>
       </div>
     </div>
     <div class="flex justify-end pt-2">
-      <button onclick="closeMediaLightbox()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs px-4 py-2 rounded-lg">Close</button>
+      <button onclick="closeMediaLightbox()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold px-4 py-2 rounded-lg touch-press">Close</button>
     </div>
   </div>
 </div>
+
+
+<!-- Modular JavaScript Architecture -->
+<script>
+  // Universal HTML Escaping Utility
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  window.escapeHtml = escapeHtml;
+</script>
+<script src="/static/js/map.js"></script>
+<script src="/static/js/geofence.js"></script>
+<script src="/static/js/evidence.js"></script>
+<script src="/static/js/media.js"></script>
+<script src="/static/js/gcs.js"></script>
+<script src="/static/js/timeline.js"></script>
+<script src="/static/js/reports.js"></script>
+<script src="/static/js/mobile.js"></script>
+<script src="/static/js/wizard.js"></script>
+<script src="/static/js/app.js"></script>
 
 </body>
 </html>

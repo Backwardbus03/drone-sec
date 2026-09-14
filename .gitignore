@@ -45,22 +45,54 @@ coverage.xml
 htmlcov/
 *.cover
 *.py,cover
+.ipynb_checkpoints/
+.python-version
 
 # Downloaded Benchmark Datasets (fetchable via: python dft/cli.py benchmark --fetch-real-data)
 benchmarks/data/*
 !benchmarks/data/.gitkeep
 
-# Forensic Cases Vault & Local Databases
+# Forensic Cases Vault, Evidence & Local Databases
 forensic_cases_vault/
+evidence_vault/
+evidence/
 cases/
 case_data/
+captures/
+dumps/
 *.sqlite
 *.sqlite3
 *.db
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Forensic Disk Images, Memory & Network Captures
+*.raw
+*.dd
+*.img
+*.e01
+*.E01
+*.aff
+*.vmdk
+*.pcap
+*.pcapng
+*.cap
 
 # Generated Forensic Reports & Exports
 examination_report.html
 final_court_report.html
+forensic_report.html
+forensic_report*.html
+*_report.html
+report_*.html
+reports/
 *.dfxml
 *_dfxml.xml
 *.kml
@@ -69,12 +101,22 @@ final_court_report.html
 *.geojson
 *.pdf
 
-# Logs
+# Logs and Temporary files
 *.log
+*.tmp
+*.temp
+*.bak
 
 # Ensure sample test fixtures are tracked
 !samples/
 !samples/**
+
+# Frontend / Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # Environment variables & secrets
 .env
@@ -99,3 +141,4 @@ final_court_report.html
 ehthumbs.db
 Thumbs.db
 desktop.ini
+

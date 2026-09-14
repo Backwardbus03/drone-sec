@@ -15,9 +15,19 @@ from dft.analysis.timeline import TimelineReconstructor
 from dft.analysis.anomaly import AnomalyDetector
 from dft.reporting.generator import ForensicReportGenerator
 from dft.core.models import CaseMetadata, EvidenceItem
+from dft.core.classifier import EvidenceClassifier
+from dft.analysis.mobile import MobileCompanionAnalyzer
+from dft.acquisition.wireless import WirelessAcquisitionEngine
+from dft.acquisition.mobile import MobileAcquisitionEngine
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         description="Drone Forensic Toolkit (DFT) — Autonomous UAV Investigation Engine"
     )
@@ -48,6 +58,19 @@ def main():
     gcs_parser.add_argument("file", help="Path to GCS telemetry/mission plan file (.tlog, .plan, .waypoints, .kml, .json, .mission, etc.)")
     gcs_parser.add_argument("--flight-log", default=None, help="Optional flight log file to compare planned mission vs flown path")
 
+    # Command: mobile
+    mob_parser = subparsers.add_parser("mobile", help="Inspect mobile companion app backups, logs, and pilot profiles")
+    mob_parser.add_argument("target", nargs="?", default=None, help="Path to mobile evidence file, folder, or backup archive (.zip, .tar)")
+    mob_parser.add_argument("--list-apps", action="store_true", help="List all supported mobile companion apps across all drone platforms")
+
+    # Command: wireless
+    wire_parser = subparsers.add_parser("wireless", help="Forensic wireless acquisition from drone Wi-Fi APs, MAVLink UDP, or wireless ADB")
+    wire_parser.add_argument("--mode", choices=["WIFI_FTP", "MAVLINK_UDP", "WIRELESS_ADB"], default="WIFI_FTP", help="Wireless acquisition mode")
+    wire_parser.add_argument("--ip", default="192.168.42.1", help="Target IP address or gateway")
+    wire_parser.add_argument("--port", type=int, default=21, help="Target network port")
+    wire_parser.add_argument("--platform", default="Parrot", help="Target platform (Parrot, DJI, ArduPilot, PX4, Betaflight)")
+    wire_parser.add_argument("--out", default="evidence_vault/wireless_cli", help="Output evidence directory")
+
     # Command: plugins
     subparsers.add_parser("plugins", help="List registered drone platform plugins")
 
@@ -56,6 +79,10 @@ def main():
     bench_parser.add_argument("--run", action="store_true", help="Execute automated benchmark validation suite")
     bench_parser.add_argument("--dataset", help="Specific benchmark ID to evaluate (e.g. ardupilot-flight-suite)")
     bench_parser.add_argument("--fetch-real-data", action="store_true", help="Download genuine real flight records, ULogs, and aerial photos from public research repositories into benchmarks/data/")
+
+    # Command: classify
+    classify_parser = subparsers.add_parser("classify", help="Inspect and classify evidence file into Logs, Video/Images, or GCS")
+    classify_parser.add_argument("file", help="Path to evidence file to classify")
 
     args = parser.parse_args()
 
@@ -78,6 +105,24 @@ def main():
         print(f"SHA3-256: {manifest.sha3_256}")
         print(f"MD5     : {manifest.md5}")
         print(f"Write-Protected: {wb['canary_write_blocked']}")
+
+    elif args.command == "classify":
+        p = Path(args.file)
+        if not p.exists():
+            print(f"[!] File not found: {args.file}")
+            sys.exit(1)
+        sample = p.read_bytes()[:4096] if p.is_file() else None
+        cat = EvidenceClassifier.classify(p, content_sample=sample)
+        disp = EvidenceClassifier.get_category_display_name(cat)
+        folder = EvidenceClassifier.get_category_folder(cat)
+        badge = EvidenceClassifier.get_category_badge(cat)
+        print(f"\n=======================================================")
+        print(f"  DFT Evidence Classification Result")
+        print(f"=======================================================")
+        print(f"  File Name:        {p.name}")
+        print(f"  Category:         {badge['icon']} {cat} ({disp})")
+        print(f"  Storage Folder:   {folder}/")
+        print(f"=======================================================\n")
 
     elif args.command == "parse":
         p = Path(args.file)
@@ -392,6 +437,86 @@ def main():
                 print(f"  Evaluation : {b.evaluation_criteria_mapping}")
             print("\nRun validation with: python dft/cli.py benchmark --run")
             print("Run specific suite:  python dft/cli.py benchmark --run --dataset <id>")
+
+    elif args.command == "mobile":
+        if args.list_apps:
+            print("================================================================================")
+            print("          SUPPORTED MOBILE COMPANION APPLICATIONS ACROSS ALL PLATFORMS          ")
+            print("================================================================================")
+            catalog = MobileCompanionAnalyzer.get_supported_catalog()
+            for app in catalog:
+                print(f"\n[+] {app['app_name']} ({app['platform']})")
+                print(f"    Package ID : {app['package_id']}")
+                print(f"    Models     : {', '.join(app['supported_models'][:3])}...")
+                print(f"    Key Files  : {', '.join(app['key_artifacts'])}")
+                print(f"    Forensics  : {'; '.join(app['forensic_capabilities'][:2])}")
+            return
+
+        if not args.target:
+            print("[!] Please provide path to mobile companion file, folder, or archive, or use --list-apps.")
+            sys.exit(1)
+
+        target_p = Path(args.target)
+        if not target_p.exists():
+            print(f"[!] Target not found: {args.target}")
+            sys.exit(1)
+
+        print(f"[*] Analyzing Mobile Companion Evidence: {target_p.name}")
+        res = MobileCompanionAnalyzer.analyze_mobile_evidence(target_p)
+        print("================================================================================")
+        print("                 MOBILE COMPANION FORENSIC ANALYSIS REPORT                      ")
+        print("================================================================================")
+        print(f"Apps Detected       : {', '.join(res.apps_detected) if res.apps_detected else 'None'}")
+        print(f"Platforms Involved  : {', '.join(res.platforms_involved) if res.platforms_involved else 'None'}")
+        print(f"Flight Records Found: {res.total_flight_records}")
+        print(f"Operator Phone Fixes: {len(res.operator_locations)}")
+
+        for art in res.artifacts:
+            print(f"\n--- [Artifact: {art.app_name} ({art.target_platform})] ---")
+            print(f"  Package ID : {art.package_id}")
+            if art.pilot_account:
+                print(f"  Pilot Name : {art.pilot_account.get('pilot_name') or art.pilot_account.get('callsign') or 'N/A'}")
+                print(f"  Pilot Email: {art.pilot_account.get('email') or 'N/A'}")
+            if art.paired_hardware:
+                print(f"  Aircraft SN: {art.paired_hardware.get('aircraft_sn') or 'N/A'}")
+                print(f"  Remote RC  : {art.paired_hardware.get('controller_sn') or 'N/A'}")
+            if art.operator_locations:
+                op = art.operator_locations[0]
+                print(f"  Phone GPS  : {op.latitude:.6f}, {op.longitude:.6f} ({op.source})")
+            if art.config_dumps:
+                print(f"  Config Dump: {list(art.config_dumps.keys())}")
+
+    elif args.command == "wireless":
+        out_dir = Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[*] Initiating Wireless Acquisition: Mode={args.mode}, Target={args.ip}:{args.port}")
+
+        if args.mode == "WIFI_FTP":
+            session = WirelessAcquisitionEngine.acquire_wifi_ap(
+                target_ip=args.ip, port=args.port, platform_hint=args.platform, destination_dir=out_dir
+            )
+        elif args.mode == "MAVLINK_UDP":
+            session = WirelessAcquisitionEngine.capture_mavlink_stream(
+                udp_port=args.port, duration_sec=2.0, destination_dir=out_dir
+            )
+        else:
+            session = WirelessAcquisitionEngine.acquire_wifi_ap(
+                target_ip=args.ip, port=args.port, platform_hint=args.platform, destination_dir=out_dir
+            )
+
+        print("================================================================================")
+        print("                 WIRELESS ACQUISITION SESSION MANIFEST                          ")
+        print("================================================================================")
+        print(f"Session ID  : {session.session_id}")
+        print(f"Protocol    : {session.protocol}")
+        print(f"Source      : {session.source_ip}")
+        print(f"Platform    : {session.drone_platform}")
+        print(f"Files Saved : {len(session.files_acquired)} files ({session.bytes_transferred} bytes)")
+        if session.hash_manifest:
+            print(f"SHA-256 Hash: {session.hash_manifest.sha256}")
+            print(f"SHA3-256    : {session.hash_manifest.sha3_256}")
+        print(f"Status      : {session.status}")
+        print(f"[+] {session.details}")
 
     else:
         parser.print_help()

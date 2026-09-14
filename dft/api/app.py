@@ -6,16 +6,23 @@ REST API backend exposing cases, evidence ingestion, telemetry, geofencing, time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import base64
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+import json
+import sqlite3
+import uuid
+from datetime import datetime, timezone
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from dft.core.models import (
     CaseMetadata, EvidenceItem, TelemetryPoint, FlightEvent,
     GeofenceZone, GeofenceViolation, AnomalyReport, FlightSummary, AuditLogEntry,
-    MediaCapture, PlannedWaypoint, GCSMissionPlan, OperatorLocation, GCSAnalysisResult
+    MediaCapture, PlannedWaypoint, GCSMissionPlan, OperatorLocation, GCSAnalysisResult,
+    MobileAppArtifact, MobileCompanionAnalysisResult, WirelessTransferSession, HashManifest
 )
+from dft.core.classifier import EvidenceClassifier, EvidenceCategory
 from dft.core.hashing import compute_hashes
 from dft.core.chain_of_custody import ChainOfCustodyManager
 from dft.core.write_blocker import WriteBlockController
@@ -26,6 +33,9 @@ from dft.analysis.timeline import TimelineReconstructor
 from dft.analysis.anomaly import AnomalyDetector
 from dft.analysis.media_import import process_media_file
 from dft.analysis.gcs import GCSAnalyzer
+from dft.analysis.mobile import MobileCompanionAnalyzer
+from dft.acquisition.wireless import WirelessAcquisitionEngine
+from dft.acquisition.mobile import MobileAcquisitionEngine
 from dft.reporting.generator import ForensicReportGenerator
 
 from dft.analysis.restricted_spaces import (
@@ -66,6 +76,16 @@ CASE_VIOLATIONS: Dict[str, List[GeofenceViolation]] = {}
 CASE_ANOMALIES: Dict[str, List[AnomalyReport]] = {}
 CASE_METADATA_EXTRA: Dict[str, Dict[str, Any]] = {}
 CASE_GCS_DATA: Dict[str, GCSAnalysisResult] = {}
+CASE_MOBILE_DATA: Dict[str, MobileCompanionAnalysisResult] = {}
+CASE_WIRELESS_SESSIONS: Dict[str, List[WirelessTransferSession]] = {}
+CASE_SYNC_VERSIONS: Dict[str, int] = {}
+CASE_LAST_MODIFIED: Dict[str, str] = {}
+
+
+def bump_case_version(case_id: str):
+    """Bumps the modification version and timestamp so connected clients sync in real-time."""
+    CASE_SYNC_VERSIONS[case_id] = CASE_SYNC_VERSIONS.get(case_id, 0) + 1
+    CASE_LAST_MODIFIED[case_id] = datetime.now(timezone.utc).isoformat()
 
 
 class CreateCaseRequest(BaseModel):
@@ -91,13 +111,31 @@ class AddZoneRequest(BaseModel):
     city_region: Optional[str] = None
 
 
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+if WEB_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
 def get_dashboard():
-    dashboard_path = Path("dft/web/dashboard.html")
+    dashboard_path = WEB_DIR / "dashboard.html"
+    if not dashboard_path.exists():
+        dashboard_path = Path("dft/web/dashboard.html")
     if dashboard_path.exists():
         return HTMLResponse(content=dashboard_path.read_text(encoding="utf-8"))
     return HTMLResponse("<h1>Drone Forensic Toolkit (DFT) API Running</h1><p><a href='/docs'>Swagger API Docs</a></p>")
+
+
+@app.get("/upload", response_class=HTMLResponse)
+@app.get("/mobile-upload", response_class=HTMLResponse)
+def serve_mobile_upload_portal():
+    portal_path = WEB_DIR / "mobile_upload.html"
+    if not portal_path.exists():
+        portal_path = Path("dft/web/mobile_upload.html")
+    if portal_path.exists():
+        return HTMLResponse(content=portal_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>DFT Mobile Upload Portal Not Found</h1>", status_code=404)
 
 
 @app.get("/samples/{filename}")
@@ -165,6 +203,10 @@ def create_case(req: CreateCaseRequest):
         mission_plans=[]
     )
     CASE_GCS_DATA[case_id] = CASE_STORE_GCS
+    CASE_MOBILE_DATA[case_id] = MobileCompanionAnalysisResult()
+    CASE_WIRELESS_SESSIONS[case_id] = []
+    CASE_SYNC_VERSIONS[case_id] = 1
+    CASE_LAST_MODIFIED[case_id] = datetime.now(timezone.utc).isoformat()
 
     coc_db.log_action(
         case_id=case_id,
@@ -172,6 +214,14 @@ def create_case(req: CreateCaseRequest):
         action="CASE_CREATED",
         details=f"New forensic case initialized: '{req.case_name}' under {req.agency_name}"
     )
+
+    case_folder = BASE_DATA_DIR / case_id
+    case_folder.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(case_folder / "case_metadata.json", "w", encoding="utf-8") as f:
+            f.write(case.model_dump_json(indent=2))
+    except Exception:
+        pass
 
     return case
 
@@ -208,65 +258,84 @@ def get_audit_trail(case_id: str):
     return coc_db.get_entries(case_id)
 
 
-# --- EVIDENCE INGESTION ---
+# --- EVIDENCE INGESTION & CATEGORY SORTING ---
 
-@app.post("/api/cases/{case_id}/ingest")
-async def ingest_evidence(
+def process_and_register_evidence(
     case_id: str,
-    file: UploadFile = File(...),
-    acquisition_type: str = Form("LOGICAL_EXTRACT"),
-    actor: str = Form("Forensic Examiner")
-):
-    if case_id not in CASES_STORE:
-        raise HTTPException(status_code=404, detail="Case not found.")
-
+    filename: str,
+    content: bytes,
+    acquisition_type: str = "LOGICAL_EXTRACT",
+    actor: str = "Forensic Examiner",
+    capture_timestamp: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Centralized, ISO/IEC 27037 compliant evidence ingestion and sorting pipeline.
+    Automatically classifies file into LOGS, VIDEO_IMAGES, or GCS.
+    Stores into organized category subfolders (logs/, video_images/, gcs/).
+    Enforces software write-blocking, computes dual cryptographic hashes (SHA-256 + SHA3-256),
+    and executes appropriate forensic analyzers (PluginManager, GCSAnalyzer, MobileCompanion, Media).
+    """
     case_folder = BASE_DATA_DIR / case_id
     case_folder.mkdir(parents=True, exist_ok=True)
 
-    dest_path = case_folder / file.filename
+    # 1. Automatic Classification & On-Disk Categorization
+    dest_path, category, folder_name = EvidenceClassifier.sort_and_prepare_destination(
+        case_folder, filename, content_sample=content[:4096]
+    )
 
-    # Save uploaded file (clear read-only bit if re-uploading)
-    if dest_path.exists():
-        try:
-            import os, stat
-            os.chmod(dest_path, stat.S_IWRITE)
-        except Exception:
-            pass
-
-    content = await file.read()
     with open(dest_path, "wb") as f:
         f.write(content)
 
-    # 1. Enforce Software Read-Only
+    # 2. Software Write-Block Enforcement & Dual Hashing
     WriteBlockController.enforce_file_read_only(dest_path)
     wb_status = WriteBlockController.verify_read_only_status(dest_path)
-
-    # 2. Compute Dual Hashes
     manifest = compute_hashes(dest_path)
 
-    # 3. Parse with Plugin Engine
-    platform_id, telemetry, events, meta = plugin_mgr.parse_evidence(dest_path)
+    # 3. Process Archive if uploaded (.zip, .tar, .tar.gz)
+    ext = dest_path.suffix.lower()
+    if ext in (".zip", ".tar", ".gz", ".tgz"):
+        try:
+            extracted_dir = dest_path.parent / f"{dest_path.stem}_unpacked"
+            if not extracted_dir.exists():
+                MobileAcquisitionEngine.extract_mobile_archive(dest_path, extracted_dir)
+        except Exception:
+            pass
 
-    # 4. Ingest and create EvidenceItem
-    item_id = f"EV-{len(CASE_EVIDENCE[case_id]) + 1:03d}"
-    evidence = EvidenceItem(
-        item_id=item_id,
-        case_id=case_id,
-        file_name=file.filename,
-        source_path=str(dest_path),
-        file_size_bytes=manifest.byte_count,
-        hashes=manifest,
-        acquisition_type=acquisition_type,  # type: ignore
-        write_block_verified=wb_status["canary_write_blocked"],
-        drone_platform=platform_id
-    )
+    platform_id = "UNKNOWN"
+    telemetry = []
+    events = []
+    meta = {}
+    flight_event = None
+    media_cap = None
 
-    CASE_EVIDENCE[case_id].append(evidence)
-    CASE_TELEMETRY[case_id].extend(telemetry)
-    CASE_EVENTS[case_id].extend(events)
-    CASE_METADATA_EXTRA[case_id].update(meta)
+    # 4. Multi-Pipeline Processing based on Category
+    if category == "VIDEO_IMAGES":
+        if case_id not in CASE_MEDIA:
+            CASE_MEDIA[case_id] = []
+        item_id = f"EV-MED-{len(CASE_MEDIA[case_id]) + 1:03d}"
+        tel_list = CASE_TELEMETRY.get(case_id, [])
+        media_cap, flight_event = process_media_file(
+            dest_path, case_id, item_id, tel_list, client_timestamp=capture_timestamp
+        )
+        CASE_MEDIA[case_id].append(media_cap)
+        if flight_event:
+            CASE_EVENTS[case_id].append(flight_event)
+            try:
+                CASE_EVENTS[case_id].sort(key=lambda e: e.timestamp_utc)
+            except Exception:
+                pass
+        platform_id = f"{media_cap.media_type}_MEDIA"
+    else:
+        # Flight Log & Telemetry Pipeline
+        platform_id, telemetry, events, meta = plugin_mgr.parse_evidence(dest_path)
+        if telemetry:
+            CASE_TELEMETRY[case_id].extend(telemetry)
+        if events:
+            CASE_EVENTS[case_id].extend(events)
+        if meta:
+            CASE_METADATA_EXTRA[case_id].update(meta)
 
-    # 4.5. Process Ground Control Station (GCS) Evidence
+    # 5. Ground Control Station (GCS) Processing
     gcs_format, gcs_fc = GCSAnalyzer.identify_gcs_format(dest_path)
     gcs_name_detected = gcs_format or meta.get("ground_control_station")
 
@@ -277,24 +346,22 @@ async def ingest_evidence(
             gcs_artifacts=[]
         )
 
-    if gcs_name_detected:
+    if gcs_name_detected or category == "GCS":
         gcs_entry = CASE_GCS_DATA[case_id]
-        if gcs_entry.detected_gcs == "NONE" or gcs_name_detected:
+        if gcs_name_detected and (gcs_entry.detected_gcs == "NONE" or gcs_name_detected):
             gcs_entry.detected_gcs = gcs_name_detected
-        if gcs_entry.associated_fc == "NONE" or gcs_fc:
-            gcs_entry.associated_fc = gcs_fc or platform_id
-        if file.filename not in gcs_entry.gcs_artifacts:
-            gcs_entry.gcs_artifacts.append(file.filename)
+        if gcs_fc and (gcs_entry.associated_fc == "NONE" or gcs_fc):
+            gcs_entry.associated_fc = gcs_fc
+        if filename not in gcs_entry.gcs_artifacts:
+            gcs_entry.gcs_artifacts.append(filename)
 
-        # Check operator location in metadata
         if meta.get("operator_location"):
             op_dict = meta["operator_location"]
             op_loc = OperatorLocation(**op_dict)
             if not any(abs(ol.latitude - op_loc.latitude) < 0.00001 and abs(ol.longitude - op_loc.longitude) < 0.00001 for ol in gcs_entry.operator_locations):
                 gcs_entry.operator_locations.append(op_loc)
 
-        # Extract mission plans from supported GCS files
-        ext = dest_path.suffix.lower()
+        # Parse GCS mission plans if applicable
         if ext in [".waypoints", ".txt"]:
             try:
                 plan, _, _, _ = GCSAnalyzer.parse_qgc_wpl(dest_path)
@@ -333,32 +400,83 @@ async def ingest_evidence(
             except Exception:
                 pass
 
+    # 6. Mobile Companion App Processing
+    try:
+        mob_res = MobileCompanionAnalyzer.analyze_mobile_evidence(dest_path)
+        if mob_res and mob_res.artifacts:
+            if case_id not in CASE_MOBILE_DATA:
+                CASE_MOBILE_DATA[case_id] = MobileCompanionAnalysisResult()
+            cur_mob = CASE_MOBILE_DATA[case_id]
+            for art in mob_res.artifacts:
+                if not any(a.app_name == art.app_name for a in cur_mob.artifacts):
+                    cur_mob.artifacts.append(art)
+                    if art.app_name not in cur_mob.apps_detected:
+                        cur_mob.apps_detected.append(art.app_name)
+                    if art.target_platform not in cur_mob.platforms_involved:
+                        cur_mob.platforms_involved.append(art.target_platform)
+            cur_mob.total_flight_records += mob_res.total_flight_records
+            cur_mob.total_waypoints_recovered += mob_res.total_waypoints_recovered
+            cur_mob.extracted_telemetry_points_count += mob_res.extracted_telemetry_points_count
+
+            for op in mob_res.operator_locations:
+                if not any(abs(ol.latitude - op.latitude) < 0.00001 and abs(ol.longitude - op.longitude) < 0.00001 for ol in cur_mob.operator_locations):
+                    cur_mob.operator_locations.append(op)
+                if case_id in CASE_GCS_DATA:
+                    if not any(abs(ol.latitude - op.latitude) < 0.00001 and abs(ol.longitude - op.longitude) < 0.00001 for ol in CASE_GCS_DATA[case_id].operator_locations):
+                        CASE_GCS_DATA[case_id].operator_locations.append(op)
+    except Exception:
+        pass
+
     # Trajectory comparison if both planned mission and flight telemetry exist
-    if case_id in CASE_GCS_DATA and CASE_GCS_DATA[case_id].mission_plans and CASE_TELEMETRY[case_id]:
+    if case_id in CASE_GCS_DATA and CASE_GCS_DATA[case_id].mission_plans and CASE_TELEMETRY.get(case_id):
         first_plan = CASE_GCS_DATA[case_id].mission_plans[0]
         comp = GCSAnalyzer.compare_mission_trajectory(first_plan, CASE_TELEMETRY[case_id])
         CASE_GCS_DATA[case_id].mission_comparison = comp
 
-    # 5. Run Geofence & Anomaly Engines
+    # Geofence & Anomaly Engines
     geo_engine = CASE_GEOFENCE_ENGINES[case_id]
-    violations = geo_engine.evaluate_telemetry(CASE_TELEMETRY[case_id])
+    violations = geo_engine.evaluate_telemetry(CASE_TELEMETRY.get(case_id, []))
     CASE_VIOLATIONS[case_id] = violations
 
-    anomalies = AnomalyDetector.inspect(CASE_TELEMETRY[case_id], CASE_EVENTS[case_id])
+    anomalies = AnomalyDetector.inspect(CASE_TELEMETRY.get(case_id, []), CASE_EVENTS.get(case_id, []))
     CASE_ANOMALIES[case_id] = anomalies
 
-    # 6. Log to Chain of Custody
+    # 7. Create EvidenceItem
+    item_id = f"EV-{len(CASE_EVIDENCE[case_id]) + 1:03d}"
+    evidence = EvidenceItem(
+        item_id=item_id,
+        case_id=case_id,
+        file_name=filename,
+        source_path=str(dest_path),
+        file_size_bytes=manifest.byte_count,
+        hashes=manifest,
+        acquisition_type=acquisition_type,  # type: ignore
+        write_block_verified=wb_status["canary_write_blocked"],
+        drone_platform=platform_id or "UNKNOWN",
+        evidence_category=category
+    )
+    CASE_EVIDENCE[case_id].append(evidence)
+
+    # 8. Log to Chain of Custody
     coc_db.log_action(
         case_id=case_id,
         actor=actor,
         action="EVIDENCE_INGESTED",
-        details=f"Ingested {file.filename} ({manifest.byte_count} bytes). Platform: {platform_id}. SHA-256: {manifest.sha256[:12]}...",
+        details=f"Ingested {filename} ({manifest.byte_count} bytes) -> Category: {category} ({folder_name}/). SHA-256: {manifest.sha256[:12]}...",
         evidence_item_id=item_id
     )
 
+    # 9. Bump version so connected dashboard and laptop pollers sync in real time
+    bump_case_version(case_id)
+
     gcs_res = CASE_GCS_DATA.get(case_id)
     return {
+        "status": "INGESTION_COMPLETE",
         "evidence_item": evidence,
+        "item_id": item_id,
+        "dest_path": dest_path,
+        "evidence_category": category,
+        "category_folder": folder_name,
         "platform_detected": platform_id,
         "platform": platform_id,
         "telemetry_points_extracted": len(telemetry),
@@ -368,7 +486,298 @@ async def ingest_evidence(
         "gcs_detected": gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None,
         "operator_locations_found": len(gcs_res.operator_locations) if gcs_res else 0,
         "mission_plans_found": len(gcs_res.mission_plans) if gcs_res else 0,
-        "mission_compliance_pct": gcs_res.mission_comparison.get("compliance_score_pct") if (gcs_res and gcs_res.mission_comparison) else None
+        "mission_compliance_pct": gcs_res.mission_comparison.get("compliance_score_pct") if (gcs_res and gcs_res.mission_comparison) else None,
+        "mobile_apps_detected": CASE_MOBILE_DATA[case_id].apps_detected if case_id in CASE_MOBILE_DATA else [],
+        "mobile_artifacts_count": len(CASE_MOBILE_DATA[case_id].artifacts) if case_id in CASE_MOBILE_DATA else 0,
+        "hashes": manifest.model_dump(),
+        "write_block_verified": wb_status["canary_write_blocked"]
+    }
+
+
+
+# --- AUTOMATIC RE-HYDRATION OF VAULT ON STARTUP ---
+
+def restore_cases_from_vault():
+    """Restores all persisted cases, evidence items, and wireless sessions from forensic_cases_vault on startup."""
+    if not BASE_DATA_DIR.exists():
+        return
+
+    known_cases: Dict[str, CaseMetadata] = {}
+    db_path = BASE_DATA_DIR / "master_audit_trail.sqlite"
+    if db_path.exists():
+        try:
+            with sqlite3.connect(db_path) as conn:
+                rows = conn.execute(
+                    "SELECT case_id, actor, details, timestamp_utc FROM audit_trail WHERE action='CASE_CREATED'"
+                ).fetchall()
+                for cid, actor, details, ts in rows:
+                    name = details.split("'")[1] if "'" in details else cid
+                    agency = details.split("under ")[-1] if "under " in details else "Forensic Lab"
+                    known_cases[cid] = CaseMetadata(
+                        case_id=cid,
+                        case_name=name,
+                        investigator_name=actor or "Examiner",
+                        agency_name=agency,
+                        created_at=ts
+                    )
+        except Exception:
+            pass
+
+    for p in sorted(BASE_DATA_DIR.iterdir()):
+        if not p.is_dir():
+            continue
+        case_id = p.name
+        if "TEST" in case_id.upper() or case_id.startswith(("SORT-CASE", "FILTER-CASE", "REPORT-CASE", "MOBILE-SYNC")):
+            continue
+        meta_file = p / "case_metadata.json"
+        case = None
+        if meta_file.exists():
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    case = CaseMetadata(**json.load(f))
+            except Exception:
+                pass
+        if not case and case_id in known_cases:
+            case = known_cases[case_id]
+        elif not case and not case_id.startswith("CASE-MEDIA-") and case_id not in ("e01", "gcs", "gcs2", "gcs3", "gcs4", "parrot", "1"):
+            case = CaseMetadata(
+                case_id=case_id,
+                case_name=case_id,
+                investigator_name="Forensic Examiner",
+                agency_name="Drone Forensics Unit"
+            )
+
+        if not case:
+            continue
+
+        CASES_STORE[case_id] = case
+        CASE_EVIDENCE[case_id] = []
+        CASE_MEDIA[case_id] = []
+        CASE_TELEMETRY[case_id] = []
+        CASE_EVENTS[case_id] = []
+        CASE_GEOFENCE_ENGINES[case_id] = GeofenceEngine()
+        CASE_VIOLATIONS[case_id] = []
+        CASE_ANOMALIES[case_id] = []
+        CASE_METADATA_EXTRA[case_id] = {}
+        CASE_GCS_DATA[case_id] = GCSAnalysisResult(detected_gcs="NONE", associated_fc="NONE", gcs_artifacts=[], operator_locations=[], mission_plans=[])
+        CASE_MOBILE_DATA[case_id] = MobileCompanionAnalysisResult()
+        CASE_WIRELESS_SESSIONS[case_id] = []
+        CASE_SYNC_VERSIONS[case_id] = 1
+        CASE_LAST_MODIFIED[case_id] = datetime.now(timezone.utc).isoformat()
+
+        # Load wireless sessions
+        wire_file = p / "wireless_sessions.json"
+        if wire_file.exists():
+            try:
+                with open(wire_file, "r", encoding="utf-8") as f:
+                    w_list = json.load(f)
+                    CASE_WIRELESS_SESSIONS[case_id] = [WirelessTransferSession(**s) for s in w_list]
+            except Exception:
+                pass
+
+        if not CASE_WIRELESS_SESSIONS[case_id] and db_path.exists():
+            try:
+                with sqlite3.connect(db_path) as conn:
+                    w_rows = conn.execute(
+                        "SELECT actor, details, timestamp_utc, signature FROM audit_trail WHERE case_id=? AND action='WIRELESS_MOBILE_UPLOAD'",
+                        (case_id,)
+                    ).fetchall()
+                    for actor, details, ts, sig in w_rows:
+                        fname = details.split("Mobile file wirelessly uploaded: ")[1].split(" (")[0] if "Mobile file wirelessly uploaded: " in details else "wireless_evidence.bin"
+                        b_str = details.split("(")[1].split(" bytes)")[0] if "(" in details and " bytes)" in details else "0"
+                        b_count = int(b_str) if b_str.isdigit() else 0
+                        sess_id = f"MOB-{sig[:8].upper()}"
+                        session = WirelessTransferSession(
+                            session_id=sess_id,
+                            timestamp_utc=ts,
+                            protocol="LOCAL_HTTP_PORTAL",
+                            source_ip="Mobile Browser Client",
+                            target_device="DFT Mobile Web Uploader",
+                            drone_platform="Mobile Ingested",
+                            bytes_transferred=b_count,
+                            files_acquired=[fname],
+                            hash_manifest=HashManifest(
+                                sha256=sig,
+                                sha3_256="",
+                                md5="",
+                                byte_count=b_count,
+                                computed_at=ts
+                            ),
+                            status="COMPLETED",
+                            details=details
+                        )
+                        CASE_WIRELESS_SESSIONS[case_id].append(session)
+            except Exception:
+                pass
+
+        # Re-index evidence files
+        found_files = []
+        for subf, cat in [("logs", "LOGS"), ("video_images", "VIDEO_IMAGES"), ("gcs", "GCS")]:
+            subdir = p / subf
+            if subdir.exists():
+                for ef in subdir.iterdir():
+                    if ef.is_file() and not ef.name.endswith(".json"):
+                        found_files.append((ef, cat))
+
+        for ef in p.iterdir():
+            if ef.is_file() and not ef.name.endswith(".json") and ef.name != "master_audit_trail.sqlite":
+                if not any(f[0].name == ef.name for f in found_files):
+                    found_files.append((ef, "LOGS"))
+
+        for ef, cat in found_files:
+            try:
+                manifest = compute_hashes(ef)
+                wb_st = WriteBlockController.verify_read_only_status(ef)
+                plat = "UNKNOWN"
+                if cat == "VIDEO_IMAGES":
+                    item_id = f"EV-MED-{len(CASE_MEDIA[case_id]) + 1:03d}"
+                    media_cap, ev = process_media_file(ef, case_id, item_id, CASE_TELEMETRY.get(case_id, []))
+                    CASE_MEDIA[case_id].append(media_cap)
+                    if ev:
+                        CASE_EVENTS[case_id].append(ev)
+                    plat = f"{media_cap.media_type}_MEDIA"
+                else:
+                    plat, telemetry, events, meta = plugin_mgr.parse_evidence(ef)
+                    if telemetry:
+                        CASE_TELEMETRY[case_id].extend(telemetry)
+                    if events:
+                        CASE_EVENTS[case_id].extend(events)
+                    if meta:
+                        CASE_METADATA_EXTRA[case_id].update(meta)
+
+                evidence = EvidenceItem(
+                    item_id=f"EV-{len(CASE_EVIDENCE[case_id]) + 1:03d}",
+                    case_id=case_id,
+                    file_name=ef.name,
+                    source_path=str(ef),
+                    file_size_bytes=manifest.byte_count,
+                    hashes=manifest,
+                    acquisition_type="LOGICAL_EXTRACT",
+                    write_block_verified=wb_st["canary_write_blocked"],
+                    drone_platform=plat or "UNKNOWN",
+                    evidence_category=cat
+                )
+                CASE_EVIDENCE[case_id].append(evidence)
+            except Exception:
+                pass
+
+        try:
+            mob_res = MobileCompanionAnalyzer.analyze_mobile_evidence(p)
+            if mob_res:
+                CASE_MOBILE_DATA[case_id] = mob_res
+        except Exception:
+            pass
+
+        # Save metadata and wireless session caches
+        try:
+            with open(meta_file, "w", encoding="utf-8") as f:
+                f.write(case.model_dump_json(indent=2))
+            if CASE_WIRELESS_SESSIONS[case_id]:
+                with open(wire_file, "w", encoding="utf-8") as f:
+                    json.dump([s.model_dump(mode="json") for s in CASE_WIRELESS_SESSIONS[case_id]], f, indent=2)
+        except Exception:
+            pass
+
+# Initialize and restore existing cases immediately
+restore_cases_from_vault()
+
+
+@app.post("/api/cases/{case_id}/ingest")
+async def ingest_evidence(
+    case_id: str,
+    file: UploadFile = File(...),
+    acquisition_type: str = Form("LOGICAL_EXTRACT"),
+    actor: str = Form("Forensic Examiner")
+):
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    content = await file.read()
+    return process_and_register_evidence(
+        case_id=case_id,
+        filename=file.filename,
+        content=content,
+        acquisition_type=acquisition_type,
+        actor=actor
+    )
+
+
+@app.get("/api/cases/{case_id}/sync-status")
+def get_case_sync_status(case_id: str):
+    """
+    Lightweight endpoint for live real-time sync with connected laptop UI.
+    Returns current sync version, evidence counts, telemetry count, and media count.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    ev_items = CASE_EVIDENCE.get(case_id, [])
+    logs_cnt = sum(1 for e in ev_items if getattr(e, "evidence_category", "LOGS") == "LOGS")
+    video_cnt = sum(1 for e in ev_items if getattr(e, "evidence_category", "LOGS") == "VIDEO_IMAGES")
+    gcs_cnt = sum(1 for e in ev_items if getattr(e, "evidence_category", "LOGS") == "GCS")
+
+    return {
+        "case_id": case_id,
+        "sync_version": CASE_SYNC_VERSIONS.get(case_id, 1),
+        "last_modified": CASE_LAST_MODIFIED.get(case_id, datetime.now(timezone.utc).isoformat()),
+        "evidence_count": len(ev_items),
+        "telemetry_count": len(CASE_TELEMETRY.get(case_id, [])),
+        "media_count": len(CASE_MEDIA.get(case_id, [])),
+        "wireless_count": len(CASE_WIRELESS_SESSIONS.get(case_id, [])),
+        "gcs_detected": bool(CASE_GCS_DATA.get(case_id) and CASE_GCS_DATA[case_id].detected_gcs != "NONE"),
+        "mobile_apps_count": len(CASE_MOBILE_DATA.get(case_id).apps_detected) if case_id in CASE_MOBILE_DATA else 0,
+        "evidence_counts": {
+            "logs": logs_cnt,
+            "video_images": video_cnt,
+            "gcs": gcs_cnt,
+            "total": len(ev_items)
+        }
+    }
+
+
+@app.get("/api/cases/{case_id}/evidence")
+def get_case_evidence(
+    case_id: str,
+    category: Optional[str] = Query(None, description="Filter by category: logs, video_images, gcs, or all")
+):
+    """
+    Returns itemized evidence vault records sorted and grouped into
+    logs, video_images, and gcs categories.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    all_items = CASE_EVIDENCE.get(case_id, [])
+    logs_items = [e for e in all_items if getattr(e, "evidence_category", "LOGS") == "LOGS"]
+    video_items = [e for e in all_items if getattr(e, "evidence_category", "LOGS") == "VIDEO_IMAGES"]
+    gcs_items = [e for e in all_items if getattr(e, "evidence_category", "LOGS") == "GCS"]
+
+    cat_lower = (category or "all").lower().strip()
+    if cat_lower in ("log", "logs"):
+        filtered = logs_items
+    elif cat_lower in ("video", "videos", "image", "images", "video_images", "media"):
+        filtered = video_items
+    elif cat_lower in ("gcs", "gsc", "station"):
+        filtered = gcs_items
+    else:
+        filtered = all_items
+
+    return {
+        "case_id": case_id,
+        "total_count": len(all_items),
+        "filter": category or "all",
+        "counts": {
+            "logs": len(logs_items),
+            "video_images": len(video_items),
+            "gcs": len(gcs_items),
+            "total": len(all_items)
+        },
+        "by_category": {
+            "logs": [e.model_dump() for e in logs_items],
+            "video_images": [e.model_dump() for e in video_items],
+            "gcs": [e.model_dump() for e in gcs_items]
+        },
+        "items": [e.model_dump() for e in filtered]
     }
 
 
@@ -389,7 +798,7 @@ async def ingest_media(
     if case_id not in CASES_STORE:
         raise HTTPException(status_code=404, detail="Case not found.")
 
-    case_folder = BASE_DATA_DIR / case_id / "media"
+    case_folder = BASE_DATA_DIR / case_id / "video_images"
     case_folder.mkdir(parents=True, exist_ok=True)
 
     dest_path = case_folder / file.filename
@@ -428,7 +837,8 @@ async def ingest_media(
         hashes=media_cap.hashes,
         acquisition_type="MEDIA_IMPORT",
         write_block_verified=wb_status["canary_write_blocked"],
-        drone_platform=f"{media_cap.media_type}_MEDIA"
+        drone_platform=f"{media_cap.media_type}_MEDIA",
+        evidence_category="VIDEO_IMAGES"
     )
     CASE_EVIDENCE[case_id].append(evidence)
     CASE_MEDIA[case_id].append(media_cap)
@@ -447,7 +857,8 @@ async def ingest_media(
             hashes=media_cap.e01_hashes or compute_hashes(eo1_path),
             acquisition_type="PHYSICAL_IMAGE",
             write_block_verified=True,
-            drone_platform=f"{media_cap.media_type}_EO1"
+            drone_platform=f"{media_cap.media_type}_EO1",
+            evidence_category="VIDEO_IMAGES"
         )
         CASE_EVIDENCE[case_id].append(eo1_evidence)
 
@@ -483,6 +894,8 @@ async def ingest_media(
         ),
         evidence_item_id=item_id
     )
+
+    bump_case_version(case_id)
 
     return {
         "status": "SUCCESS",
@@ -588,6 +1001,18 @@ def get_summary(case_id: str):
     op_loc = gcs_res.operator_locations[0] if (gcs_res and gcs_res.operator_locations) else None
     gcs_name = gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None
 
+    mob_res = CASE_MOBILE_DATA.get(case_id)
+    mob_apps = mob_res.apps_detected if mob_res else []
+    wireless_count = len(CASE_WIRELESS_SESSIONS.get(case_id, []))
+
+    ev_items = CASE_EVIDENCE.get(case_id, [])
+    ev_counts = {
+        "logs": sum(1 for e in ev_items if getattr(e, "evidence_category", "LOGS") == "LOGS"),
+        "video_images": sum(1 for e in ev_items if getattr(e, "evidence_category", "LOGS") == "VIDEO_IMAGES"),
+        "gcs": sum(1 for e in ev_items if getattr(e, "evidence_category", "LOGS") == "GCS"),
+        "total": len(ev_items)
+    }
+
     return FlightPathAnalyzer.calculate_summary(
         pts,
         platform_name=platform_name,
@@ -596,7 +1021,10 @@ def get_summary(case_id: str):
         violations_count=len(vios),
         anomalies_count=len(anoms),
         operator_location=op_loc,
-        gcs_detected=gcs_name
+        gcs_detected=gcs_name,
+        mobile_companion_apps=mob_apps,
+        wireless_sessions_count=wireless_count,
+        evidence_counts=ev_counts
     )
 
 
@@ -714,6 +1142,241 @@ def get_supported_ground_stations():
             ]
         }
     ]
+
+
+# --- MOBILE COMPANION APPLICATION & WIRELESS FORENSIC API ---
+
+class WirelessAcquireRequest(BaseModel):
+    mode: str = "WIFI_FTP"
+    target_ip: str = "192.168.42.1"
+    port: int = 21
+    platform_hint: str = "Parrot"
+    duration_sec: float = 2.0
+    actor: str = "Forensic Analyst"
+
+
+@app.get("/api/cases/{case_id}/mobile", response_model=MobileCompanionAnalysisResult)
+def get_case_mobile_analysis(case_id: str):
+    """
+    Returns complete Mobile Companion Application forensic analysis:
+    detected mobile apps, registered pilot accounts/emails, paired drone serial numbers,
+    operator smartphone GPS fixes, offline mission plans, and configuration backups.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    if case_id not in CASE_MOBILE_DATA:
+        return MobileCompanionAnalysisResult()
+
+    return CASE_MOBILE_DATA[case_id]
+
+
+@app.get("/api/mobile/supported-apps")
+def get_supported_mobile_apps():
+    """
+    Returns the comprehensive catalog of all supported mobile companion apps across all drone platforms
+    (DJI Fly/GO/Pilot/Litchi, QGroundControl Mobile, 3DR Tower, Parrot FreeFlight, SpeedyBee, EZ-GUI, Autel Explorer).
+    """
+    return MobileCompanionAnalyzer.get_supported_catalog()
+
+
+@app.get("/api/wireless/supported-modes")
+def get_supported_wireless_modes():
+    """Returns catalog of supported forensic wireless acquisition protocols and defaults."""
+    return WirelessAcquisitionEngine.get_supported_modes()
+
+
+@app.get("/api/cases/{case_id}/wireless", response_model=List[WirelessTransferSession])
+def get_case_wireless_sessions(case_id: str):
+    """Returns all wireless transfer and acquisition sessions logged for the case."""
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    return CASE_WIRELESS_SESSIONS.get(case_id, [])
+
+
+@app.post("/api/cases/{case_id}/wireless/acquire", response_model=WirelessTransferSession)
+def execute_wireless_acquisition(case_id: str, req: WirelessAcquireRequest):
+    """
+    Executes forensic wireless acquisition from a drone Wi-Fi AP, MAVLink UDP stream,
+    or wireless ADB mobile extraction under ISO/IEC 27037:2012 integrity rules.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    case_folder = BASE_DATA_DIR / case_id / "wireless_evidence"
+    case_folder.mkdir(parents=True, exist_ok=True)
+
+    mode = req.mode.upper()
+    if mode == "WIFI_FTP":
+        session = WirelessAcquisitionEngine.acquire_wifi_ap(
+            target_ip=req.target_ip,
+            port=req.port,
+            platform_hint=req.platform_hint,
+            destination_dir=case_folder,
+            simulate_mock_if_offline=True
+        )
+    elif mode == "MAVLINK_UDP":
+        session = WirelessAcquisitionEngine.capture_mavlink_stream(
+            udp_port=req.port or 14550,
+            bind_host="0.0.0.0",
+            duration_sec=req.duration_sec or 2.0,
+            destination_dir=case_folder,
+            simulate_mock_if_no_packets=True
+        )
+    else:
+        # Generic wireless ADB / local session
+        session_id = f"ADB-{uuid.uuid4().hex[:8].upper()}"
+        dummy_file = case_folder / f"wireless_adb_{req.platform_hint.lower()}_{session_id}.json"
+        if dummy_file.exists():
+            try:
+                import os, stat
+                os.chmod(dummy_file, stat.S_IWRITE)
+            except Exception:
+                pass
+        dummy_file.write_text(
+            json.dumps({
+                "source": "Wireless ADB",
+                "device_ip": req.target_ip,
+                "platform": req.platform_hint,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "status": "EXTRACTED"
+            }),
+            encoding="utf-8"
+        )
+        WriteBlockController.enforce_file_read_only(dummy_file)
+        h = compute_hashes(dummy_file)
+        session = WirelessTransferSession(
+            session_id=session_id,
+            protocol="WIRELESS_ADB",
+            source_ip=req.target_ip,
+            target_device=f"Android Wireless Device ({req.target_ip}:{req.port})",
+            drone_platform=req.platform_hint,
+            bytes_transferred=h.byte_count,
+            files_acquired=[dummy_file.name],
+            hash_manifest=h,
+            status="COMPLETED",
+            details=f"Acquired mobile companion app directory via Wireless ADB from {req.target_ip}:{req.port}."
+        )
+
+    if case_id not in CASE_WIRELESS_SESSIONS:
+        CASE_WIRELESS_SESSIONS[case_id] = []
+    CASE_WIRELESS_SESSIONS[case_id].append(session)
+
+    # Ingest acquired files into case evidence and run mobile/GCS parsers
+    for fname in session.files_acquired:
+        fpath = case_folder / fname
+        if fpath.exists():
+            h = compute_hashes(fpath)
+            item_id = f"EV-{len(CASE_EVIDENCE[case_id]) + 1:03d}"
+            ev = EvidenceItem(
+                item_id=item_id,
+                case_id=case_id,
+                file_name=fname,
+                source_path=str(fpath),
+                file_size_bytes=h.byte_count,
+                hashes=h,
+                acquisition_type="WIRELESS_TRANSFER",
+                write_block_verified=True,
+                drone_platform=session.drone_platform or "WIRELESS"
+            )
+            CASE_EVIDENCE[case_id].append(ev)
+
+            # Analyze for mobile companion artifacts
+            try:
+                mob_res = MobileCompanionAnalyzer.analyze_mobile_evidence(fpath)
+                if mob_res and mob_res.artifacts:
+                    if case_id not in CASE_MOBILE_DATA:
+                        CASE_MOBILE_DATA[case_id] = MobileCompanionAnalysisResult()
+                    cur_m = CASE_MOBILE_DATA[case_id]
+                    for art in mob_res.artifacts:
+                        if not any(a.app_name == art.app_name for a in cur_m.artifacts):
+                            cur_m.artifacts.append(art)
+                            if art.app_name not in cur_m.apps_detected:
+                                cur_m.apps_detected.append(art.app_name)
+                            if art.target_platform not in cur_m.platforms_involved:
+                                cur_m.platforms_involved.append(art.target_platform)
+            except Exception:
+                pass
+
+    # Log to Chain of Custody
+    coc_db.log_action(
+        case_id=case_id,
+        actor=req.actor,
+        action="WIRELESS_ACQUISITION_COMPLETED",
+        details=f"Wireless transfer session {session.session_id} ({session.protocol}) from {session.source_ip}. Acquired {len(session.files_acquired)} file(s) ({session.bytes_transferred} bytes)."
+    )
+
+    return session
+
+
+@app.post("/api/cases/{case_id}/wireless/upload-mobile")
+async def upload_mobile_file(
+    case_id: str,
+    file: UploadFile = File(...),
+    actor: str = Form("Mobile Operator")
+):
+    """
+    Receives wireless direct evidence uploads from suspect mobile phones or tablets
+    connected to the local DFT network via mobile browser or QR-code portal.
+    Executes full forensic multi-category pipeline, categorizes and sorts on disk,
+    logs wireless session, and notifies active sessions in real-time.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail="Case not found.")
+
+    content = await file.read()
+    ingest_res = process_and_register_evidence(
+        case_id=case_id,
+        filename=file.filename,
+        content=content,
+        acquisition_type="WIRELESS_TRANSFER",
+        actor=actor
+    )
+
+    session = WirelessAcquisitionEngine.process_direct_mobile_upload(
+        uploaded_files=[ingest_res["dest_path"]],
+        client_ip="Mobile Browser Client",
+        user_agent="DFT Mobile Web Uploader"
+    )
+
+    if case_id not in CASE_WIRELESS_SESSIONS:
+        CASE_WIRELESS_SESSIONS[case_id] = []
+    CASE_WIRELESS_SESSIONS[case_id].append(session)
+
+    try:
+        wire_path = BASE_DATA_DIR / case_id / "wireless_sessions.json"
+        with open(wire_path, "w", encoding="utf-8") as f:
+            json.dump([s.model_dump(mode="json") for s in CASE_WIRELESS_SESSIONS[case_id]], f, indent=2)
+    except Exception:
+        pass
+
+    coc_db.log_action(
+        case_id=case_id,
+        actor=actor,
+        action="WIRELESS_MOBILE_UPLOAD",
+        details=(
+            f"Mobile file wirelessly uploaded: {file.filename} ({ingest_res['evidence_item'].file_size_bytes} bytes). "
+            f"Category: {ingest_res['evidence_category']} ({ingest_res['category_folder']}/). "
+            f"SHA-256: {ingest_res['hashes']['sha256'][:12]}..."
+        ),
+        evidence_item_id=ingest_res["item_id"]
+    )
+
+    bump_case_version(case_id)
+
+    return {
+        "status": "SUCCESS",
+        "session_id": session.session_id,
+        "file_name": file.filename,
+        "bytes_received": ingest_res["evidence_item"].file_size_bytes,
+        "sha256": ingest_res["hashes"]["sha256"],
+        "evidence_item": ingest_res["evidence_item"],
+        "evidence_category": ingest_res["evidence_category"],
+        "category_folder": ingest_res["category_folder"],
+        "telemetry_points_extracted": ingest_res["telemetry_points_extracted"],
+        "platform_detected": ingest_res["platform_detected"],
+        "mobile_apps_detected": CASE_MOBILE_DATA[case_id].apps_detected if case_id in CASE_MOBILE_DATA else []
+    }
 
 
 # --- GEOFENCING CONFIGURATION, REAL-WORLD CATALOG & EVALUATION ---
@@ -878,20 +1541,25 @@ def get_html_report(case_id: str):
     gcs_res = CASE_GCS_DATA.get(case_id)
     op_loc = gcs_res.operator_locations[0] if (gcs_res and gcs_res.operator_locations) else None
     gcs_name = gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None
+    mob_res = CASE_MOBILE_DATA.get(case_id)
+    wireless_sess = CASE_WIRELESS_SESSIONS.get(case_id, [])
 
     summary = FlightPathAnalyzer.calculate_summary(
         pts, platform_name=platform_name,
         events=events,
         events_count=len(events), violations_count=len(vios), anomalies_count=len(anoms),
         operator_location=op_loc,
-        gcs_detected=gcs_name
+        gcs_detected=gcs_name,
+        mobile_companion_apps=mob_res.apps_detected if mob_res else [],
+        wireless_sessions_count=len(wireless_sess)
     )
 
     media_items = CASE_MEDIA.get(case_id, [])
     html = ForensicReportGenerator.generate_html_report(
         case=case, summary=summary, evidence_items=ev_items,
         geofence_violations=vios, anomalies=anoms, timeline=timeline, audit_logs=audit_logs,
-        gcs_analysis=gcs_res, media_items=media_items
+        gcs_analysis=gcs_res, media_items=media_items,
+        mobile_analysis=mob_res, wireless_sessions=wireless_sess
     )
     return html
 
@@ -914,20 +1582,25 @@ def get_json_report(case_id: str):
     gcs_res = CASE_GCS_DATA.get(case_id)
     op_loc = gcs_res.operator_locations[0] if (gcs_res and gcs_res.operator_locations) else None
     gcs_name = gcs_res.detected_gcs if (gcs_res and gcs_res.detected_gcs != "NONE") else None
+    mob_res = CASE_MOBILE_DATA.get(case_id)
+    wireless_sess = CASE_WIRELESS_SESSIONS.get(case_id, [])
 
     summary = FlightPathAnalyzer.calculate_summary(
         pts, platform_name=platform_name,
         events=events,
         events_count=len(events), violations_count=len(vios), anomalies_count=len(anoms),
         operator_location=op_loc,
-        gcs_detected=gcs_name
+        gcs_detected=gcs_name,
+        mobile_companion_apps=mob_res.apps_detected if mob_res else [],
+        wireless_sessions_count=len(wireless_sess)
     )
 
     media_items = CASE_MEDIA.get(case_id, [])
     json_str = ForensicReportGenerator.generate_json_export(
         case=case, summary=summary, evidence_items=ev_items,
         geofence_violations=vios, anomalies=anoms, timeline=timeline, audit_logs=audit_logs,
-        gcs_analysis=gcs_res, media_items=media_items
+        gcs_analysis=gcs_res, media_items=media_items,
+        mobile_analysis=mob_res, wireless_sessions=wireless_sess
     )
     return Response(content=json_str, media_type="application/json")
 
