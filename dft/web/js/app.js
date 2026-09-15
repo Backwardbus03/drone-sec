@@ -59,6 +59,8 @@ function switchTab(tabId) {
     if (gcsMap) setTimeout(() => gcsMap.invalidateSize(), 150);
   } else if (tabId === 'mobileTab') {
     if (typeof initMobileTab === 'function') initMobileTab();
+  } else if (tabId === 'ragTab') {
+    if (typeof ragCheckStatus === 'function') ragCheckStatus();
   }
 }
 
@@ -317,6 +319,7 @@ async function refreshCaseData() {
     if (typeof loadAuditTable === 'function') loadAuditTable();
     if (typeof loadGcsData === 'function') loadGcsData();
     if (typeof loadMobileData === 'function') loadMobileData();
+    if (typeof ragOnCaseChanged === 'function') ragOnCaseChanged(activeCaseId);
   } catch (e) {
     console.error('Error refreshing case data:', e);
   }

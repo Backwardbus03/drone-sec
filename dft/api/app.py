@@ -469,6 +469,24 @@ def process_and_register_evidence(
     # 9. Bump version so connected dashboard and laptop pollers sync in real time
     bump_case_version(case_id)
 
+    # 10. Auto-index into RAG Vector Store (best-effort, isolated per case)
+    try:
+        from dft.rag.ingest import ingest_case
+        ingest_case(
+            case_id,
+            events=CASE_EVENTS.get(case_id, []),
+            violations=CASE_VIOLATIONS.get(case_id, []),
+            anomalies=CASE_ANOMALIES.get(case_id, []),
+            telemetry=CASE_TELEMETRY.get(case_id, []),
+            audit_log=coc_db.get_entries(case_id),
+            evidence=CASE_EVIDENCE.get(case_id, []),
+            media=CASE_MEDIA.get(case_id, []),
+            gcs=CASE_GCS_DATA.get(case_id),
+            mobile=CASE_MOBILE_DATA.get(case_id),
+        )
+    except Exception:
+        pass
+
     gcs_res = CASE_GCS_DATA.get(case_id)
     return {
         "status": "INGESTION_COMPLETE",
@@ -1770,4 +1788,72 @@ def api_fetch_real_benchmark_data():
     from dft.benchmarks.downloader import fetch_real_benchmark_data
     res = fetch_real_benchmark_data()
     return res
+
+
+# --- RAG / AI INVESTIGATOR ASSISTANT (ISO 27037 REASONING) ---
+
+class RagQueryRequest(BaseModel):
+    question: str
+    top_k: int = 10
+    where: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/cases/{case_id}/ask")
+def api_rag_ask(case_id: str, body: RagQueryRequest):
+    """
+    Executes a forensic RAG retrieval and synthesis workflow for an active case.
+    Uses Groq with automatic fallback to local Ollama and local evidence matching.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found.")
+
+    from dft.rag.query import answer_case_question
+    result = answer_case_question(case_id, body.question, top_k=body.top_k, where=body.where)
+    return result
+
+
+@app.post("/api/cases/{case_id}/rag/ingest")
+def api_rag_ingest(case_id: str):
+    """
+    Forces full vectorization and indexing of all case evidence into its isolated ChromaDB collection.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found.")
+
+    from dft.rag.ingest import ingest_case
+    total_indexed = ingest_case(
+        case_id,
+        events=CASE_EVENTS.get(case_id, []),
+        violations=CASE_VIOLATIONS.get(case_id, []),
+        anomalies=CASE_ANOMALIES.get(case_id, []),
+        telemetry=CASE_TELEMETRY.get(case_id, []),
+        audit_log=coc_db.get_entries(case_id),
+        evidence=CASE_EVIDENCE.get(case_id, []),
+        media=CASE_MEDIA.get(case_id, []),
+        gcs=CASE_GCS_DATA.get(case_id),
+        mobile=CASE_MOBILE_DATA.get(case_id),
+    )
+    return {
+        "status": "INGEST_SUCCESS",
+        "case_id": case_id,
+        "chunks_indexed": total_indexed
+    }
+
+
+@app.get("/api/cases/{case_id}/rag/status")
+def api_rag_status(case_id: str):
+    """
+    Returns the indexing status and count of vectorized evidence chunks for this case.
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found.")
+
+    from dft.rag.vector_store import count_case_chunks
+    count = count_case_chunks(case_id)
+    return {
+        "case_id": case_id,
+        "indexed_chunks": count,
+        "ready": count > 0
+    }
+
 

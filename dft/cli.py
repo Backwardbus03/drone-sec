@@ -84,6 +84,17 @@ def main():
     classify_parser = subparsers.add_parser("classify", help="Inspect and classify evidence file into Logs, Video/Images, or GCS")
     classify_parser.add_argument("file", help="Path to evidence file to classify")
 
+    # Command: ask (Forensic RAG Q&A)
+    ask_parser = subparsers.add_parser("ask", help="Query case evidence in natural language using forensic RAG")
+    ask_parser.add_argument("case_id", help="Case ID to query")
+    ask_parser.add_argument("question", help="Natural language forensic question")
+    ask_parser.add_argument("--top-k", type=int, default=8, help="Number of evidence chunks to retrieve")
+
+    # Command: rag-ingest
+    rag_parser = subparsers.add_parser("rag-ingest", help="Vectorize and index an evidence file into ChromaDB")
+    rag_parser.add_argument("file", help="Path to evidence file to parse and index")
+    rag_parser.add_argument("--case-id", default="CLI_CASE", help="Case ID to associate with the index")
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -517,6 +528,46 @@ def main():
             print(f"SHA3-256    : {session.hash_manifest.sha3_256}")
         print(f"Status      : {session.status}")
         print(f"[+] {session.details}")
+
+    elif args.command == "ask":
+        from dft.rag.query import answer_case_question
+        print(f"[*] Querying Case '{args.case_id}' RAG Index: \"{args.question}\"")
+        res = answer_case_question(args.case_id, args.question, top_k=args.top_k)
+        print("\n================================================================================")
+        print(f"                  DFT AI FORENSIC ANALYST REPORT ({res.get('provider', 'N/A').upper()})")
+        print("================================================================================")
+        print(res.get("answer", ""))
+        print("\n--- [EVIDENCE CITATIONS RETRIEVED] ---")
+        for s in res.get("sources", []):
+            meta = s.get("metadata", {})
+            print(f"[{s.get('index')}] ({meta.get('chunk_type', 'chunk')}) {s.get('text')}")
+        print("================================================================================\n")
+
+    elif args.command == "rag-ingest":
+        p = Path(args.file)
+        if not p.exists():
+            print(f"[!] File not found: {args.file}")
+            sys.exit(1)
+        from dft.plugins.manager import PluginManager
+        from dft.analysis.geofence import GeofenceEngine
+        from dft.analysis.anomaly import AnomalyDetector
+        from dft.rag.ingest import ingest_case
+
+        print(f"[*] Parsing {p.name} for RAG indexing into case '{args.case_id}'...")
+        mgr = PluginManager()
+        platform_id, telemetry, events, meta = mgr.parse_evidence(p)
+        geo_engine = GeofenceEngine()
+        violations = geo_engine.evaluate_telemetry(telemetry)
+        anomalies = AnomalyDetector.inspect(telemetry, events)
+
+        total = ingest_case(
+            args.case_id,
+            events=events,
+            violations=violations,
+            anomalies=anomalies,
+            telemetry=telemetry
+        )
+        print(f"[✓] RAG Ingestion Complete! Vectorized and indexed {total} evidence chunks into collection 'case_{args.case_id}'.")
 
     else:
         parser.print_help()

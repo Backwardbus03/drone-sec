@@ -10,6 +10,8 @@
 <!-- Leaflet CSS & JS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Marked Markdown Parser CDN -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -136,6 +138,9 @@
       <button onclick="switchTab('mobileTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>📱</span> <span>Mobile & Wireless</span>
       </button>
+      <button onclick="switchTab('ragTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>🤖</span> <span>AI Analyst (RAG)</span>
+      </button>
     </nav>
   </div>
 
@@ -179,6 +184,9 @@
       </button>
       <button onclick="switchTab('mobileTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
         <span>📱</span> <span>Mobile & Wireless</span>
+      </button>
+      <button onclick="switchTab('ragTab')" class="nav-btn w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition">
+        <span>🤖</span> <span>AI Analyst (RAG)</span>
       </button>
     </nav>
 
@@ -1070,6 +1078,104 @@
       </div>
     </div>
 
+    <!-- TAB 10: AI FORENSIC ANALYST (RAG) -->
+    <div id="ragTab" class="tab-pane hidden space-y-4">
+      <!-- RAG Header & Control Bar -->
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-slate-200/80 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center space-x-2.5">
+              <span class="text-2xl">🤖</span>
+              <h2 class="text-base sm:text-lg font-bold text-slate-900 tracking-wide">AI Forensic Analyst (RAG Assistant)</h2>
+              <span id="ragIndexBadge" class="hidden text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full font-mono font-bold">0 Chunks</span>
+              <span id="ragProviderIndicator" class="hidden"></span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              Natural-language evidence reasoning across flight telemetry, geofence breaches, sensor anomalies, and chain-of-custody.
+              Engine: <strong class="text-slate-700">Groq LLaMA-3.3</strong> with automatic fallback to <strong class="text-slate-700">Local Ollama</strong> and direct vector search.
+            </p>
+          </div>
+          <div class="flex items-center space-x-2 shrink-0">
+            <button id="ragIngestBtn" onclick="ragIngestCase()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition shadow-md shadow-sky-600/20 flex items-center space-x-1.5 touch-press">
+              <span>⚡</span> <span>Index Case Evidence</span>
+            </button>
+            <button onclick="ragClearChat()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-medium px-3 py-2 rounded-lg transition touch-press" title="Clear Chat History">
+              <span>🧹</span> <span class="hidden sm:inline">Clear Chat</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Status & Forensic Safeguards Note -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-xs">
+          <div id="ragStatusBar" class="text-slate-600 text-[11px] font-mono">
+            Select a case to query its evidence repository.
+          </div>
+          <div class="text-[10px] text-slate-400 flex items-center space-x-1">
+            <span>🛡️</span>
+            <span>Ground-truth answers strictly sourced from case vault &bull; ISO/IEC 27037 compliant</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Investigation Queries -->
+      <div class="space-y-1.5">
+        <div class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider px-1">Quick Forensic Questions:</div>
+        <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+          <button onclick="ragSetQuestion('Did the drone commit any restricted airspace or geofence violations? State coordinates, altitudes, and time windows.')" class="px-3 py-1.5 rounded-full text-xs font-medium bg-white hover:bg-rose-50 hover:text-rose-700 text-slate-700 border border-slate-200 transition whitespace-nowrap shadow-sm shrink-0">
+            🛡️ Geofence Violations?
+          </button>
+          <button onclick="ragSetQuestion('Summarize all anomalies and flight telemetry irregularities detected in this case, including severity and potential causes.')" class="px-3 py-1.5 rounded-full text-xs font-medium bg-white hover:bg-amber-50 hover:text-amber-700 text-slate-700 border border-slate-200 transition whitespace-nowrap shadow-sm shrink-0">
+            ⚠️ Anomaly Summary
+          </button>
+          <button onclick="ragSetQuestion('What sequence of flight events occurred during takeoff, waypoint navigation, and landing? Provide exact UTC timestamps.')" class="px-3 py-1.5 rounded-full text-xs font-medium bg-white hover:bg-sky-50 hover:text-sky-700 text-slate-700 border border-slate-200 transition whitespace-nowrap shadow-sm shrink-0">
+            ⏱️ Flight Sequence & Events
+          </button>
+          <button onclick="ragSetQuestion('Where was the drone operator located, which Ground Control Station or mobile app was used, and what pilot identifiers were recovered?')" class="px-3 py-1.5 rounded-full text-xs font-medium bg-white hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 border border-slate-200 transition whitespace-nowrap shadow-sm shrink-0">
+            🎮 Operator & Pilot Identifiers
+          </button>
+          <button onclick="ragSetQuestion('Was the chain of custody maintained without alteration? Verify the SHA-256 and SHA3-256 hashes and HMAC signatures.')" class="px-3 py-1.5 rounded-full text-xs font-medium bg-white hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 border border-slate-200 transition whitespace-nowrap shadow-sm shrink-0">
+            📜 Chain-of-Custody Integrity
+          </button>
+          <button onclick="ragSetQuestion('Did this flight violate statutory provisions under the DGCA Drone Rules 2021 (e.g. Red Zone, Yellow Zone altitude caps) or FAA Part 107?')" class="px-3 py-1.5 rounded-full text-xs font-medium bg-white hover:bg-purple-50 hover:text-purple-700 text-slate-700 border border-slate-200 transition whitespace-nowrap shadow-sm shrink-0">
+            ⚖️ Statutory Legal Analysis
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Conversation Interface -->
+      <div class="glass-panel rounded-xl border border-slate-200/80 flex flex-col shadow-sm h-[580px] max-h-[75vh]">
+        <!-- Chat Scrollable History Area -->
+        <div id="ragChatWindow" class="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 font-sans text-sm">
+          <div class="p-4 rounded-xl bg-sky-50/70 border border-sky-100 text-xs text-sky-800 space-y-1">
+            <div class="font-bold flex items-center space-x-1.5 text-sm text-sky-900">
+              <span>🤖</span> <span>AI Forensic Assistant Ready</span>
+            </div>
+            <p>Welcome to the Drone Forensic Toolkit AI Analyst.</p>
+            <p class="text-[11px] text-sky-700">Select an active case above, then ask any forensic question or pick a suggested prompt.</p>
+          </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <div class="border-t border-slate-200/80 p-3 sm:p-3.5 bg-slate-50/60 rounded-b-xl flex gap-2 items-center">
+          <input
+            id="ragQuestionInput"
+            type="text"
+            placeholder="Ask a forensic question regarding this case (e.g., 'Did the drone breach any airport zones?')..."
+            class="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition shadow-inner"
+            onkeydown="if(event.key==='Enter') ragAsk()"
+          />
+          <button
+            id="ragSendBtn"
+            onclick="ragAsk()"
+            class="bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold px-4 sm:px-5 py-2.5 rounded-xl transition text-xs sm:text-sm shadow-md shadow-sky-600/20 flex items-center space-x-1.5 shrink-0 touch-press"
+          >
+            <span>Ask</span> <span>↗</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+
   </section>
 </main>
 
@@ -1193,6 +1299,7 @@
 <script src="/static/js/reports.js"></script>
 <script src="/static/js/mobile.js"></script>
 <script src="/static/js/wizard.js"></script>
+<script src="/static/js/rag.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

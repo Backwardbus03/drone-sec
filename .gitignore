@@ -60,6 +60,10 @@ cases/
 case_data/
 captures/
 dumps/
+vector_db/
+chroma_db/
+.chroma/
+*.parquet
 *.sqlite
 *.sqlite3
 *.db

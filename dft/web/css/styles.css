@@ -216,3 +216,132 @@ body {
 .touch-press:active {
   transform: scale(0.97);
 }
+
+/* --- AI Forensic Analyst (RAG) Markdown Styling --- */
+.rag-markdown {
+  color: #1e293b;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.rag-markdown p {
+  margin-bottom: 0.75rem;
+}
+
+.rag-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.rag-markdown h1,
+.rag-markdown h2,
+.rag-markdown h3,
+.rag-markdown h4 {
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.4;
+}
+
+.rag-markdown h1 { font-size: 1.15rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.25rem; }
+.rag-markdown h2 { font-size: 1.05rem; }
+.rag-markdown h3 { font-size: 0.95rem; color: #0369a1; }
+.rag-markdown h4 { font-size: 0.875rem; color: #334155; }
+
+.rag-markdown strong,
+.rag-markdown b {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.rag-markdown ul {
+  list-style-type: disc;
+  padding-left: 1.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.rag-markdown ol {
+  list-style-type: decimal;
+  padding-left: 1.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.rag-markdown li {
+  margin-bottom: 0.4rem;
+  padding-left: 0.2rem;
+}
+
+.rag-markdown li::marker {
+  color: #0284c7;
+  font-weight: 600;
+}
+
+.rag-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.375rem;
+  color: #0369a1;
+}
+
+.rag-markdown pre {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+  border: 1px solid #1e293b;
+}
+
+.rag-markdown pre code {
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+.rag-markdown blockquote {
+  border-left: 3px solid #0284c7;
+  margin: 0.75rem 0;
+  color: #475569;
+  font-style: italic;
+  background: rgba(2, 132, 199, 0.05);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+
+.rag-markdown hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1rem 0;
+}
+
+.rag-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+  font-size: 0.8125rem;
+}
+
+.rag-markdown th {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  color: #334155;
+  text-align: left;
+}
+
+.rag-markdown td {
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.75rem;
+  color: #1e293b;
+}
+
+.rag-markdown tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
