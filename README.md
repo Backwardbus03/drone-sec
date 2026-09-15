@@ -19,6 +19,7 @@
   - [1. 5-Layer Forensic Architecture](#1-5-layer-forensic-architecture)
   - [2. Forensic RAG Subsystem (AI Forensic Analyst)](#2-forensic-rag-subsystem-ai-forensic-analyst)
   - [3. Multi-Source Evidence & Platform Support](#3-multi-source-evidence--platform-support)
+    - [Extending Support for Custom Drone Formats (`dft/plugins/base.py`)](#extending-support-for-custom-drone-formats-dftpluginsbasepy)
   - [4. Ground Control Station (GCS) Audit](#4-ground-control-station-gcs-audit)
   - [5. Mobile Companion App Forensics](#5-mobile-companion-app-forensics)
   - [6. Forensic Wireless Acquisition](#6-forensic-wireless-acquisition)
@@ -159,6 +160,57 @@ The toolkit features a specialized **Retrieval-Augmented Generation (RAG)** engi
 | **Ground Control** | `.plan`, `.waypoints`, `.kml`, `.param` | Planned routes, waypoint coordinates, planned altitudes, operator home fixes, GCS software identifiers |
 | **Mobile Apps** | Android `.db`/backups, iOS `.plist`/archives | Pilot accounts, email, aircraft serial numbers, remote controller IDs, pilot phone GPS coordinates |
 | **Aerial Media** | `.jpg`, `.jpeg`, `.mp4`, `.mov` | EXIF GPS IFD tags, camera sensor model, rational coordinate decoding, embedded video subtitle streams (`.srt`) |
+
+#### Extending Support for Custom Drone Formats (`dft/plugins/base.py`)
+
+For investigators and developers encountering drone models or proprietary flight record formats not supported out-of-the-box (e.g., Autel, Skydio, custom enterprise UAVs, or proprietary blackboxes), **[`dft/plugins/base.py`](dft/plugins/base.py)** provides an **editable, standardized base class** (`DroneForensicPlugin`).
+
+Anyone with a different or new drone format can easily implement custom parsing by subclassing this interface:
+
+```python
+from pathlib import Path
+from typing import List, Dict, Any
+from dft.plugins.base import DroneForensicPlugin
+from dft.core.models import TelemetryPoint, FlightEvent
+
+class CustomDronePlugin(DroneForensicPlugin):
+    @property
+    def platform_id(self) -> str:
+        return "custom_uav"  # Unique machine identifier
+
+    @property
+    def display_name(self) -> str:
+        return "Custom UAV Platform"
+
+    @property
+    def supported_extensions(self) -> List[str]:
+        return [".bin", ".log", ".dat", ".json"]
+
+    def detect(self, file_path: Path) -> bool:
+        # Signature/magic-byte or header check to identify this format
+        with open(file_path, "rb") as f:
+            header = f.read(16)
+            return b"CUSTOM_HEADER" in header
+
+    def parse_telemetry(self, file_path: Path) -> List[TelemetryPoint]:
+        # Extract and normalize timestamp, lat, lon, alt, speed, roll/pitch/yaw
+        points = []
+        # e.g., points.append(TelemetryPoint(timestamp=..., latitude=..., longitude=...))
+        return points
+
+    def parse_events(self, file_path: Path) -> List[FlightEvent]:
+        # Extract discrete flight events (arm, disarm, failsafe, mode changes, waypoints)
+        return []
+
+    def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
+        # Extract flight controller serial number, firmware version, drone model
+        return {"platform": "custom_uav", "serial": "UNKNOWN"}
+```
+
+##### How to Enable Your Custom Plugin:
+1. **Edit or Subclass**: Inherit from `DroneForensicPlugin` in [`dft/plugins/base.py`](dft/plugins/base.py) or create a new parser module under `dft/plugins/`.
+2. **Register**: Add your class instance to `self._plugins` in [`dft/plugins/manager.py`](dft/plugins/manager.py) (or invoke `manager.register_plugin(CustomDronePlugin())`).
+3. **Verify**: Run `python dft/cli.py plugins` to see your new platform registered in the active parser registry. The Web Dashboard, REST API, and CLI will automatically route your file format through the complete 5-layer forensic pipeline!
 
 ---
 
@@ -499,7 +551,7 @@ drone-sec/
 │   │   └── models.py              # Canonical Pydantic data schemas & telemetry models
 │   ├── plugins/                   # Layer 3: Vendor-Neutral Multi-Platform Parsers
 │   │   ├── manager.py             # Dynamic plugin registration & routing manager
-│   │   ├── base.py                # Abstract base plugin interface
+│   │   ├── base.py                # Abstract base plugin interface (editable base for custom drone formats)
 │   │   ├── dji.py                 # DJI .DAT, .txt, and .srt telemetry parser
 │   │   ├── ardupilot.py           # ArduPilot DataFlash .bin, .log, and .tlog parser
 │   │   ├── px4.py                 # PX4 native binary ULog (.ulg) & .csv parser
