@@ -6,6 +6,12 @@ REST API backend exposing cases, evidence ingestion, telemetry, geofencing, time
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 import base64
 import json
 import sqlite3

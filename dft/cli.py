@@ -5,6 +5,12 @@ from pathlib import Path
 # Add project root to sys.path for direct script execution
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         try:

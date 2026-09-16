@@ -281,7 +281,7 @@ function ragReplaceAssistantMessage(msgId, data) {
   const provider = data.provider || "groq";
 
   let providerBadgeClass = "bg-sky-50 text-sky-700 border-sky-200";
-  let providerLabel = "Groq LLaMA-3.3";
+  let providerLabel = "Groq Cloud LLM";
   if (provider === "ollama") {
     providerBadgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
     providerLabel = "Local Ollama";

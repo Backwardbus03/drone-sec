@@ -9,7 +9,7 @@ services:
       - key: GROQ_API_KEY
         sync: false          # Set this in the Render dashboard (secret)
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+        value: openai/gpt-oss-120b
       - key: DFT_DATA_DIR
         value: /data/forensic_cases_vault
       - key: HF_HOME
