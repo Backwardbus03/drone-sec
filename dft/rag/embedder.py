@@ -1,38 +1,18 @@
 """
-Local Embeddings Engine for Drone Forensic Toolkit (DFT).
-Uses sentence-transformers locally (all-MiniLM-L6-v2) to maintain complete data privacy
-and forensic integrity without sending evidentiary payloads to third-party endpoints.
-Includes offline fallback in case the transformer weights are not yet cached.
+Embeddings Engine for Drone Forensic Toolkit (DFT).
+Uses Google Gemini API for text embeddings (text-embedding-004).
+Includes offline fallback.
 """
 
+import os
 from typing import List
-import math
 import hashlib
 import numpy as np
 
-_ST_MODEL = None
-_INIT_ATTEMPTED = False
-
-
-def _get_st_model():
-    global _ST_MODEL, _INIT_ATTEMPTED
-    if _INIT_ATTEMPTED:
-        return _ST_MODEL
-    _INIT_ATTEMPTED = True
-    try:
-        from sentence_transformers import SentenceTransformer
-        # Load local model (cached in standard huggingface cache)
-        _ST_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-    except Exception as err:
-        _ST_MODEL = None
-    return _ST_MODEL
-
-
-def _fallback_hash_embed(text: str, dim: int = 384) -> List[float]:
+def _fallback_hash_embed(text: str, dim: int = 768) -> List[float]:
     """
-    Deterministically projects text onto a normalized 384-dim vector space
-    using hashed n-grams. Used when sentence-transformers or network is unavailable
-    in air-gapped forensic environments.
+    Deterministically projects text onto a normalized vector space
+    using hashed n-grams. Used when API is unavailable.
     """
     vec = np.zeros(dim, dtype=np.float32)
     tokens = text.lower().replace(",", " ").replace("|", " ").replace(":", " ").split()
@@ -60,23 +40,29 @@ def _fallback_hash_embed(text: str, dim: int = 384) -> List[float]:
 
 def embed(texts: List[str]) -> List[List[float]]:
     """
-    Computes vector embeddings for a list of texts.
-    Returns a list of 384-dimensional float vectors.
+    Computes vector embeddings for a list of texts using Google Gemini API.
+    Returns a list of 768-dimensional float vectors.
     """
     if not texts:
         return []
 
-    model = _get_st_model()
-    if model is not None:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if api_key:
         try:
-            embeddings = model.encode(texts, batch_size=32, show_progress_bar=False, normalize_embeddings=True)
-            return [e.tolist() for e in embeddings]
-        except Exception:
+            from google import genai
+            client = genai.Client(api_key=api_key)
+            response = client.models.embed_content(
+                model='text-embedding-004',
+                contents=texts,
+            )
+            return [e.values for e in response.embeddings]
+        except Exception as e:
+            print(f"Google API embed error: {e}")
             pass
 
-    # Air-gapped fallback
-    return [_fallback_hash_embed(t, dim=384) for t in texts]
+    # Fallback if API key missing or request fails
+    return [_fallback_hash_embed(t, dim=768) for t in texts]
 
 
 def get_embedding_dimension() -> int:
-    return 384
+    return 768

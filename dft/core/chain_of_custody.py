@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 from dft.core.models import AuditLogEntry
+from dft.core.cloud_sync import upload_file_to_cloud
 
 # Read from DFT_HMAC_SECRET env var; hardcoded default is only for local dev.
 # ALWAYS set a strong secret in production (Render dashboard > Environment).
@@ -104,6 +105,11 @@ class ChainOfCustodyManager:
             )
         finally:
             conn.close()
+            # Sync to cloud after every action
+            try:
+                upload_file_to_cloud(self.db_path, self.db_path.parent)
+            except Exception:
+                pass
 
     def get_entries(self, case_id: str) -> List[AuditLogEntry]:
         """Returns all audit entries for a case in chronological order."""

@@ -226,8 +226,12 @@ def create_case(req: CreateCaseRequest):
     case_folder = BASE_DATA_DIR / case_id
     case_folder.mkdir(parents=True, exist_ok=True)
     try:
-        with open(case_folder / "case_metadata.json", "w", encoding="utf-8") as f:
+        meta_path = case_folder / "case_metadata.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
             f.write(case.model_dump_json(indent=2))
+        
+        from dft.core.cloud_sync import upload_file_to_cloud
+        upload_file_to_cloud(meta_path, BASE_DATA_DIR)
     except Exception:
         pass
 
@@ -317,6 +321,12 @@ def delete_case(case_id: str):
     except Exception:
         pass
 
+    try:
+        from dft.core.cloud_sync import delete_case_from_cloud
+        delete_case_from_cloud(case_id)
+    except Exception:
+        pass
+
     return {"status": "deleted", "case_id": case_id}
 
 
@@ -371,6 +381,12 @@ def delete_all_cases():
                     f.unlink()
                 except Exception:
                     pass
+    except Exception:
+        pass
+
+    try:
+        from dft.core.cloud_sync import wipe_cloud_vault
+        wipe_cloud_vault()
     except Exception:
         pass
 
@@ -610,6 +626,14 @@ def process_and_register_evidence(
     except Exception:
         pass
 
+    # 11. Sync uploaded evidence file to cloud
+    try:
+        from dft.core.cloud_sync import upload_file_to_cloud
+        upload_file_to_cloud(dest_path, BASE_DATA_DIR)
+    except Exception as e:
+        import logging
+        logging.getLogger("dft").error(f"Cloud evidence sync failed: {e}")
+
     gcs_res = CASE_GCS_DATA.get(case_id)
     return {
         "status": "INGESTION_COMPLETE",
@@ -640,6 +664,9 @@ def process_and_register_evidence(
 
 def restore_cases_from_vault():
     """Restores all persisted cases, evidence items, and wireless sessions from forensic_cases_vault on startup."""
+    from dft.core.cloud_sync import sync_vault_from_cloud
+    sync_vault_from_cloud(BASE_DATA_DIR)
+
     if not BASE_DATA_DIR.exists():
         return
 

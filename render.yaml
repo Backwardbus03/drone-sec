@@ -11,20 +11,22 @@ services:
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: DFT_DATA_DIR
-        value: /data/forensic_cases_vault
-      - key: HF_HOME
-        value: /data/.cache/huggingface
-      - key: SENTENCE_TRANSFORMERS_HOME
-        value: /data/.cache/sentence_transformers
+        value: forensic_cases_vault
       - key: ENVIRONMENT
         value: production
       - key: DFT_HMAC_SECRET
         sync: false          # Set this in the Render dashboard (secret)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX
+        value: dft-index
+      - key: GOOGLE_API_KEY
+        sync: false
       - key: OLLAMA_URL
         value: http://localhost:11434   # Not available on Render; DFT falls back to Groq
       - key: OLLAMA_MODEL
         value: llama3
-    disk:
-      name: dft-persistent-data
-      mountPath: /data
-      sizeGB: 1              # Free tier — 1 GB persistent volume
