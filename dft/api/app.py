@@ -608,25 +608,7 @@ def process_and_register_evidence(
     # 9. Bump version so connected dashboard and laptop pollers sync in real time
     bump_case_version(case_id)
 
-    # 10. Auto-index into RAG Vector Store (best-effort, isolated per case)
-    try:
-        from dft.rag.ingest import ingest_case
-        ingest_case(
-            case_id,
-            events=CASE_EVENTS.get(case_id, []),
-            violations=CASE_VIOLATIONS.get(case_id, []),
-            anomalies=CASE_ANOMALIES.get(case_id, []),
-            telemetry=CASE_TELEMETRY.get(case_id, []),
-            audit_log=coc_db.get_entries(case_id),
-            evidence=CASE_EVIDENCE.get(case_id, []),
-            media=CASE_MEDIA.get(case_id, []),
-            gcs=CASE_GCS_DATA.get(case_id),
-            mobile=CASE_MOBILE_DATA.get(case_id),
-        )
-    except Exception:
-        pass
-
-    # 11. Sync uploaded evidence file to cloud
+    # 10. Sync uploaded evidence file to cloud
     try:
         from dft.core.cloud_sync import upload_file_to_cloud
         upload_file_to_cloud(dest_path, BASE_DATA_DIR)

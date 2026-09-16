@@ -77,12 +77,28 @@ def _recursive_download(client, current_cloud_path: str, local_base: Path):
             # Check if it's a file by looking at metadata
             if item.get("metadata"):
                 # It's a file
-                local_file = local_base / cloud_item_path
-                local_file.parent.mkdir(parents=True, exist_ok=True)
-                
-                res = client.storage.from_(BUCKET_NAME).download(cloud_item_path)
-                with open(local_file, "wb") as f:
-                    f.write(res)
+                try:
+                    local_file = local_base / cloud_item_path
+                    local_file.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # If file already exists and size matches, skip download
+                    cloud_size = item.get("metadata", {}).get("size")
+                    if local_file.exists() and cloud_size is not None and local_file.stat().st_size == cloud_size:
+                        continue
+
+                    # If file exists and is read-only (evidence protection), make writable before updating
+                    if local_file.exists():
+                        try:
+                            import stat
+                            os.chmod(local_file, stat.S_IWRITE)
+                        except Exception:
+                            pass
+                    
+                    res = client.storage.from_(BUCKET_NAME).download(cloud_item_path)
+                    with open(local_file, "wb") as f:
+                        f.write(res)
+                except Exception as file_err:
+                    logger.warning(f"Could not sync file {cloud_item_path}: {file_err}")
             else:
                 # It's a folder, recurse
                 _recursive_download(client, cloud_item_path, local_base)
@@ -105,7 +121,7 @@ def sync_vault_from_cloud(local_base: Path):
         # Check if bucket exists, create if not
         buckets = client.storage.list_buckets()
         if not any(b.name == BUCKET_NAME for b in buckets):
-            client.storage.create_bucket(BUCKET_NAME, {"public": False})
+            client.storage.create_bucket(BUCKET_NAME, options={"public": False})
             logger.info(f"Created new Supabase bucket: {BUCKET_NAME}")
             return # Bucket is empty anyway
             
