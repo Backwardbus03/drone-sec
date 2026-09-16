@@ -5,22 +5,6 @@ from pathlib import Path
 # Add project root to sys.path for direct script execution
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dft.core.hashing import compute_hashes
-from dft.core.chain_of_custody import ChainOfCustodyManager
-from dft.core.write_blocker import WriteBlockController
-from dft.plugins.manager import PluginManager
-from dft.analysis.geofence import GeofenceEngine
-from dft.analysis.flight_path import FlightPathAnalyzer
-from dft.analysis.timeline import TimelineReconstructor
-from dft.analysis.anomaly import AnomalyDetector
-from dft.reporting.generator import ForensicReportGenerator
-from dft.core.models import CaseMetadata, EvidenceItem
-from dft.core.classifier import EvidenceClassifier
-from dft.analysis.mobile import MobileCompanionAnalyzer
-from dft.acquisition.wireless import WirelessAcquisitionEngine
-from dft.acquisition.mobile import MobileAcquisitionEngine
-
-
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         try:
@@ -104,6 +88,9 @@ def main():
         uvicorn.run("dft.api.app:app", host=args.host, port=args.port, reload=False)
 
     elif args.command == "hash":
+        from dft.core.write_blocker import WriteBlockController
+        from dft.core.hashing import compute_hashes
+
         p = Path(args.file)
         if not p.exists():
             print(f"[!] File not found: {args.file}")
@@ -118,6 +105,8 @@ def main():
         print(f"Write-Protected: {wb['canary_write_blocked']}")
 
     elif args.command == "classify":
+        from dft.core.classifier import EvidenceClassifier
+
         p = Path(args.file)
         if not p.exists():
             print(f"[!] File not found: {args.file}")
@@ -136,6 +125,11 @@ def main():
         print(f"=======================================================\n")
 
     elif args.command == "parse":
+        from dft.plugins.manager import PluginManager
+        from dft.analysis.geofence import GeofenceEngine
+        from dft.analysis.anomaly import AnomalyDetector
+        from dft.analysis.flight_path import FlightPathAnalyzer
+
         p = Path(args.file)
         mgr = PluginManager()
         platform_id, telemetry, events, meta = mgr.parse_evidence(p)
@@ -293,6 +287,16 @@ def main():
         print("================================================================================")
 
     elif args.command == "report":
+        from dft.plugins.manager import PluginManager
+        from dft.core.hashing import compute_hashes
+        from dft.analysis.geofence import GeofenceEngine
+        from dft.analysis.anomaly import AnomalyDetector
+        from dft.analysis.timeline import TimelineReconstructor
+        from dft.analysis.flight_path import FlightPathAnalyzer
+        from dft.reporting.generator import ForensicReportGenerator
+        from dft.core.models import CaseMetadata, EvidenceItem
+        from dft.core.chain_of_custody import ChainOfCustodyManager
+
         p = Path(args.file)
         mgr = PluginManager()
         platform_id, telemetry, events, meta = mgr.parse_evidence(p)
@@ -371,6 +375,7 @@ def main():
         print(f"[+] Forensic Report successfully generated: {out_path.resolve()}")
 
     elif args.command == "plugins":
+        from dft.plugins.manager import PluginManager
         mgr = PluginManager()
         print("=== REGISTERED DRONE FORENSIC PLUGINS ===")
         for pl in mgr.list_plugins():
@@ -450,6 +455,8 @@ def main():
             print("Run specific suite:  python dft/cli.py benchmark --run --dataset <id>")
 
     elif args.command == "mobile":
+        from dft.analysis.mobile import MobileCompanionAnalyzer
+
         if args.list_apps:
             print("================================================================================")
             print("          SUPPORTED MOBILE COMPANION APPLICATIONS ACROSS ALL PLATFORMS          ")
@@ -498,6 +505,8 @@ def main():
                 print(f"  Config Dump: {list(art.config_dumps.keys())}")
 
     elif args.command == "wireless":
+        from dft.acquisition.wireless import WirelessAcquisitionEngine
+
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
         print(f"[*] Initiating Wireless Acquisition: Mode={args.mode}, Target={args.ip}:{args.port}")
@@ -548,9 +557,6 @@ def main():
         if not p.exists():
             print(f"[!] File not found: {args.file}")
             sys.exit(1)
-        from dft.plugins.manager import PluginManager
-        from dft.analysis.geofence import GeofenceEngine
-        from dft.analysis.anomaly import AnomalyDetector
         from dft.rag.ingest import ingest_case
 
         print(f"[*] Parsing {p.name} for RAG indexing into case '{args.case_id}'...")

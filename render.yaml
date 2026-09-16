@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: drone-forensic-toolkit
+    env: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn dft.api.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false          # Set this in the Render dashboard (secret)
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: DFT_DATA_DIR
+        value: /data/forensic_cases_vault
+      - key: HF_HOME
+        value: /data/.cache/huggingface
+      - key: SENTENCE_TRANSFORMERS_HOME
+        value: /data/.cache/sentence_transformers
+      - key: ENVIRONMENT
+        value: production
+      - key: DFT_HMAC_SECRET
+        sync: false          # Set this in the Render dashboard (secret)
+      - key: OLLAMA_URL
+        value: http://localhost:11434   # Not available on Render; DFT falls back to Groq
+      - key: OLLAMA_MODEL
+        value: llama3
+    disk:
+      name: dft-persistent-data
+      mountPath: /data
+      sizeGB: 1              # Free tier — 1 GB persistent volume

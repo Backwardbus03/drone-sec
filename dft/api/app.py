@@ -3,6 +3,7 @@ FastAPI Server for Drone Forensic Toolkit (DFT).
 REST API backend exposing cases, evidence ingestion, telemetry, geofencing, timeline, and reporting.
 """
 
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import base64
@@ -59,7 +60,8 @@ app.add_middleware(
 )
 
 # Persistent In-Memory Case Registry & Cache
-BASE_DATA_DIR = Path("forensic_cases_vault")
+# DFT_DATA_DIR env var lets Render Disk (or any mount) be used in production
+BASE_DATA_DIR = Path(os.getenv("DFT_DATA_DIR", "forensic_cases_vault"))
 BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 coc_db = ChainOfCustodyManager(BASE_DATA_DIR / "master_audit_trail.sqlite")
@@ -256,6 +258,121 @@ def get_case(case_id: str):
 @app.get("/api/cases/{case_id}/audit-trail", response_model=List[AuditLogEntry])
 def get_audit_trail(case_id: str):
     return coc_db.get_entries(case_id)
+
+
+# --- CASE DELETION ---
+
+import shutil
+
+def _wipe_case_from_memory(case_id: str):
+    """Removes a single case from all in-memory stores."""
+    CASES_STORE.pop(case_id, None)
+    CASE_EVIDENCE.pop(case_id, None)
+    CASE_MEDIA.pop(case_id, None)
+    CASE_TELEMETRY.pop(case_id, None)
+    CASE_EVENTS.pop(case_id, None)
+    CASE_GEOFENCE_ENGINES.pop(case_id, None)
+    CASE_VIOLATIONS.pop(case_id, None)
+    CASE_ANOMALIES.pop(case_id, None)
+    CASE_METADATA_EXTRA.pop(case_id, None)
+    CASE_GCS_DATA.pop(case_id, None)
+    CASE_MOBILE_DATA.pop(case_id, None)
+    CASE_WIRELESS_SESSIONS.pop(case_id, None)
+    CASE_SYNC_VERSIONS.pop(case_id, None)
+    CASE_LAST_MODIFIED.pop(case_id, None)
+
+
+@app.delete("/api/cases/{case_id}", summary="Delete a single forensic case and all its data")
+def delete_case(case_id: str):
+    """
+    Permanently deletes a single forensic case including:
+    - All in-memory state (telemetry, evidence, events, violations, etc.)
+    - Case folder on disk (evidence files, reports, metadata)
+    - ChromaDB / SQLite vector index for the case
+    """
+    if case_id not in CASES_STORE:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found.")
+
+    # Wipe in-memory state
+    _wipe_case_from_memory(case_id)
+
+    # Delete case folder from disk
+    case_folder = BASE_DATA_DIR / case_id
+    if case_folder.exists():
+        try:
+            shutil.rmtree(case_folder, ignore_errors=True)
+        except Exception:
+            pass
+
+    # Delete vector store collection for the case
+    try:
+        from dft.rag.vector_store import delete_case_collection
+        delete_case_collection(case_id)
+    except Exception:
+        pass
+
+    return {"status": "deleted", "case_id": case_id}
+
+
+@app.delete("/api/cases", summary="Wipe ALL forensic cases and reset the database")
+def delete_all_cases():
+    """
+    Nuclear reset: permanently erases every forensic case, all evidence files,
+    the entire audit trail SQLite DB, all ChromaDB vector indices, and all
+    in-memory state. The server returns to a clean initial state.
+    """
+    all_case_ids = list(CASES_STORE.keys())
+
+    # Wipe all in-memory stores
+    for case_id in all_case_ids:
+        _wipe_case_from_memory(case_id)
+
+    # Wipe all case folders (evidence files, metadata, reports)
+    if BASE_DATA_DIR.exists():
+        for item in BASE_DATA_DIR.iterdir():
+            if item.is_dir() and item.name != "vector_db":
+                try:
+                    shutil.rmtree(item, ignore_errors=True)
+                except Exception:
+                    pass
+
+    # Delete and re-initialise the SQLite audit trail
+    audit_db_path = BASE_DATA_DIR / "master_audit_trail.sqlite"
+    if audit_db_path.exists():
+        try:
+            audit_db_path.unlink()
+        except Exception:
+            pass
+    # Re-init the CoC manager so the DB is recreated fresh
+    global coc_db
+    coc_db = ChainOfCustodyManager(audit_db_path)
+
+    # Wipe all ChromaDB vector collections
+    try:
+        from dft.rag.vector_store import _get_chroma_client, VECTOR_DB_DIR
+        import chromadb
+        client = _get_chroma_client()
+        if client is not None:
+            for col in client.list_collections():
+                try:
+                    client.delete_collection(col.name)
+                except Exception:
+                    pass
+        # Also remove any sqlite fallback vector DBs
+        if VECTOR_DB_DIR.exists():
+            for f in VECTOR_DB_DIR.glob("sqlite_*.db"):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return {
+        "status": "all_cleared",
+        "cases_deleted": len(all_case_ids),
+        "message": "All forensic cases, evidence, audit trail, and vector indices have been permanently erased."
+    }
 
 
 # --- EVIDENCE INGESTION & CATEGORY SORTING ---

@@ -4,20 +4,26 @@ Provides simultaneous computation and verification of SHA-256, SHA-3-256, and MD
 Adheres to ISO/IEC 27037:2012 evidence integrity requirements.
 """
 
+from __future__ import annotations
+
 import hashlib
 from pathlib import Path
-from typing import Union, BinaryIO, Dict, Any
+from typing import Union, BinaryIO, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timezone
-from dft.core.models import HashManifest
+
+if TYPE_CHECKING:
+    from dft.core.models import HashManifest
 
 CHUNK_SIZE = 65536  # 64 KB streaming blocks
 
 
-def compute_hashes(source: Union[str, Path, bytes, BinaryIO]) -> HashManifest:
+def compute_hashes(source: Union[str, Path, bytes, BinaryIO]) -> "HashManifest":
     """
     Computes SHA-256, SHA-3-256, and MD5 in a single streaming pass.
     Accepts a file path, raw bytes, or an open binary stream.
     """
+    from dft.core.models import HashManifest
+
     h_sha256 = hashlib.sha256()
     h_sha3 = hashlib.sha3_256()
     h_md5 = hashlib.md5()
@@ -78,3 +84,11 @@ def verify_integrity(source: Union[str, Path, bytes, BinaryIO], manifest: HashMa
         "computed": current,
         "expected": manifest
     }
+
+
+def __getattr__(name: str) -> Any:
+    if name == "HashManifest":
+        from dft.core.models import HashManifest
+        globals()["HashManifest"] = HashManifest
+        return HashManifest
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

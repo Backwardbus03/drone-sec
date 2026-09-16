@@ -13,6 +13,7 @@ Supported GCS Ecosystems:
 
 import json
 import math
+import mmap
 import struct
 import xml.etree.ElementTree as ET
 import zipfile
@@ -144,262 +145,278 @@ class GCSAnalyzer:
             "statustext_messages": []
         }
 
+        TARGET_MSG_IDS = {0, 24, 33, 242, 253}
+        is_mmap = False
+        data = None
+
         try:
             with open(file_path, "rb") as f:
-                data = f.read()
+                file_len = f.seek(0, 2)
+                if file_len < 9:
+                    return telemetry, events, operator_locations, metadata
+                f.seek(0)
+                try:
+                    data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                    is_mmap = True
+                except Exception:
+                    data = f.read()
+                    is_mmap = False
         except Exception:
             return telemetry, events, operator_locations, metadata
 
         offset = 0
-        file_len = len(data)
         armed_state = False
-        msg_counts: Dict[int, int] = {}
-        first_ts_iso = None
-        last_ts_iso = None
+        cached_usec = -1
+        cached_iso = ""
 
-        while offset <= file_len - 9:
-            # TLOG packet format:
-            # 8 bytes: Unix timestamp in microseconds (big-endian uint64)
-            # Followed by MAVLink packet starting with 0xFE (MAVLink 1) or 0xFD (MAVLink 2)
-            ts_usec = struct.unpack_from(">Q", data, offset)[0]
-            offset += 8
+        try:
+            while offset <= file_len - 9:
+                # TLOG packet format:
+                # 8 bytes: Unix timestamp in microseconds (big-endian uint64)
+                # Followed by MAVLink packet starting with 0xFE (MAVLink 1) or 0xFD (MAVLink 2)
+                ts_usec = struct.unpack_from(">Q", data, offset)[0]
+                offset += 8
 
-            if offset >= file_len:
-                break
+                if offset >= file_len:
+                    break
 
-            magic = data[offset]
-            if magic not in (0xFE, 0xFD):
-                # Resynchronize by scanning for magic byte preceded by reasonable timestamp
-                found = False
-                for sync_offset in range(offset, min(offset + 128, file_len - 9)):
-                    if data[sync_offset] in (0xFE, 0xFD) and sync_offset >= 8:
-                        candidate_ts = struct.unpack_from(">Q", data, sync_offset - 8)[0]
-                        if 1_200_000_000_000_000 < candidate_ts < 2_500_000_000_000_000:
-                            offset = sync_offset
-                            magic = data[offset]
-                            found = True
-                            break
-                if not found:
-                    offset += 1
+                magic = data[offset]
+                if magic not in (0xFE, 0xFD):
+                    # Resynchronize by scanning for magic byte preceded by reasonable timestamp
+                    found = False
+                    for sync_offset in range(offset, min(offset + 128, file_len - 9)):
+                        if data[sync_offset] in (0xFE, 0xFD) and sync_offset >= 8:
+                            candidate_ts = struct.unpack_from(">Q", data, sync_offset - 8)[0]
+                            if 1_200_000_000_000_000 < candidate_ts < 2_500_000_000_000_000:
+                                offset = sync_offset
+                                magic = data[offset]
+                                found = True
+                                break
+                    if not found:
+                        offset += 1
+                        continue
+
+                # Parse MAVLink header first before doing any timestamp conversions
+                if magic == 0xFE:  # MAVLink 1.0
+                    if offset + 6 > file_len:
+                        break
+                    payload_len = data[offset + 1]
+                    msg_id = data[offset + 5]
+                    header_len = 6
+                    total_pkt_len = header_len + payload_len + 2  # 2 checksum bytes
+                else:  # MAVLink 2.0 (0xFD)
+                    if offset + 10 > file_len:
+                        break
+                    payload_len = data[offset + 1]
+                    incompat_flags = data[offset + 2]
+                    msg_id = data[offset + 7] | (data[offset + 8] << 8) | (data[offset + 9] << 16)
+                    header_len = 10
+                    sig_len = 13 if (incompat_flags & 0x01) else 0
+                    total_pkt_len = header_len + payload_len + 2 + sig_len
+
+                if offset + total_pkt_len > file_len:
+                    break
+
+                # Early filter: Skip decoding non-target message payloads and skip ISO datetime generation
+                if msg_id not in TARGET_MSG_IDS:
+                    offset += total_pkt_len
+                    metadata["messages_decoded"] += 1
                     continue
 
-            # Convert microseconds to ISO timestamp
-            try:
-                ts_sec = ts_usec / 1_000_000.0
-                dt = datetime.fromtimestamp(ts_sec, timezone.utc)
-                ts_iso = dt.isoformat()
-            except Exception:
-                ts_iso = datetime.now(timezone.utc).isoformat()
-
-            if not first_ts_iso:
-                first_ts_iso = ts_iso
-            last_ts_iso = ts_iso
-
-            # Parse MAVLink header
-            if magic == 0xFE:  # MAVLink 1.0
-                if offset + 6 > file_len:
-                    break
-                payload_len = data[offset + 1]
-                seq = data[offset + 2]
-                sys_id = data[offset + 3]
-                comp_id = data[offset + 4]
-                msg_id = data[offset + 5]
-                header_len = 6
-                total_pkt_len = header_len + payload_len + 2  # 2 checksum bytes
-            else:  # MAVLink 2.0 (0xFD)
-                if offset + 10 > file_len:
-                    break
-                payload_len = data[offset + 1]
-                incompat_flags = data[offset + 2]
-                compat_flags = data[offset + 3]
-                seq = data[offset + 4]
-                sys_id = data[offset + 5]
-                comp_id = data[offset + 6]
-                msg_id = data[offset + 7] | (data[offset + 8] << 8) | (data[offset + 9] << 16)
-                header_len = 10
-                sig_len = 13 if (incompat_flags & 0x01) else 0
-                total_pkt_len = header_len + payload_len + 2 + sig_len
-
-            if offset + total_pkt_len > file_len:
-                break
-
-            payload = data[offset + header_len : offset + header_len + payload_len]
-            offset += total_pkt_len
-            metadata["messages_decoded"] += 1
-            msg_counts[msg_id] = msg_counts.get(msg_id, 0) + 1
-
-            # -------------------------------------------------------------
-            # Message 33: GLOBAL_POSITION_INT (lat, lon, alt, vx, vy, vz, hdg)
-            # -------------------------------------------------------------
-            if msg_id == 33 and len(payload) >= 28:
-                try:
-                    time_boot_ms, lat_int, lon_int, alt_mm, rel_alt_mm, vx, vy, vz, hdg = struct.unpack_from("<Iiiii3hH", payload, 0)
-                    lat = lat_int / 1e7
-                    lon = lon_int / 1e7
-                    alt_m = round(rel_alt_mm / 1000.0, 2)
-                    spd = round(math.sqrt(vx * vx + vy * vy) / 100.0, 2)
-
-                    if abs(lat) <= 90.0 and abs(lon) <= 180.0 and (abs(lat) > 0.001 or abs(lon) > 0.001):
-                        telemetry.append(TelemetryPoint(
-                            timestamp_utc=ts_iso,
-                            latitude=round(lat, 7),
-                            longitude=round(lon, 7),
-                            altitude_m=alt_m,
-                            ground_speed_mps=spd,
-                            yaw_deg=round(hdg / 100.0, 1),
-                            source_channel="MAVLINK_GLOBAL_POSITION_INT"
-                        ))
-                except Exception:
-                    pass
-
-            # -------------------------------------------------------------
-            # Message 24: GPS_RAW_INT (fix_type, lat, lon, alt, vel, satellites)
-            # -------------------------------------------------------------
-            elif msg_id == 24 and len(payload) >= 30:
-                try:
-                    lat, lon, alt_mm, vel, sats = 0.0, 0.0, 0, 0, 0
+                # Only format timestamp for consumed messages
+                if ts_usec == cached_usec:
+                    ts_iso = cached_iso
+                else:
                     try:
-                        # Try canonical wire order (<QiiiHHHHBB)
-                        time_usec_raw, lat_int, lon_int, alt_mm, eph, epv, vel, cog, fix_type, sats = struct.unpack_from("<QiiiHHHHBB", payload, 0)
-                        lat = lat_int / 1e7
-                        lon = lon_int / 1e7
-                        if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0 and (abs(lat) > 0.001 or abs(lon) > 0.001)):
-                            raise ValueError("Invalid wire coordinates")
+                        ts_sec = ts_usec / 1_000_000.0
+                        dt = datetime.fromtimestamp(ts_sec, timezone.utc)
+                        ts_iso = dt.isoformat()
                     except Exception:
-                        # Fallback to logical definition order (<QBiiiHHHHB)
-                        time_usec_raw, fix_type, lat_int, lon_int, alt_mm, eph, epv, vel, cog, sats = struct.unpack_from("<QBiiiHHHHB", payload, 0)
+                        ts_iso = datetime.now(timezone.utc).isoformat()
+                    cached_usec = ts_usec
+                    cached_iso = ts_iso
+
+                payload = data[offset + header_len : offset + header_len + payload_len]
+                offset += total_pkt_len
+                metadata["messages_decoded"] += 1
+
+                # -------------------------------------------------------------
+                # Message 33: GLOBAL_POSITION_INT (lat, lon, alt, vx, vy, vz, hdg)
+                # -------------------------------------------------------------
+                if msg_id == 33 and len(payload) >= 28:
+                    try:
+                        time_boot_ms, lat_int, lon_int, alt_mm, rel_alt_mm, vx, vy, vz, hdg = struct.unpack_from("<Iiiii3hH", payload, 0)
                         lat = lat_int / 1e7
                         lon = lon_int / 1e7
+                        alt_m = round(rel_alt_mm / 1000.0, 2)
+                        spd = round(math.sqrt(vx * vx + vy * vy) / 100.0, 2)
 
-                    if (abs(lat) <= 90.0 and abs(lon) <= 180.0 and (abs(lat) > 0.001 or abs(lon) > 0.001) and
-                            not (telemetry and telemetry[-1].source_channel == "MAVLINK_GLOBAL_POSITION_INT" and telemetry[-1].timestamp_utc == ts_iso)):
-                        telemetry.append(TelemetryPoint(
-                            timestamp_utc=ts_iso,
-                            latitude=round(lat, 7),
-                            longitude=round(lon, 7),
-                            altitude_m=round(alt_mm / 1000.0, 2),
-                            ground_speed_mps=round(vel / 100.0, 2),
-                            satellites_visible=sats,
-                            source_channel="MAVLINK_GPS_RAW_INT"
-                        ))
-                except Exception:
-                    pass
+                        if abs(lat) <= 90.0 and abs(lon) <= 180.0 and (abs(lat) > 0.001 or abs(lon) > 0.001):
+                            telemetry.append(TelemetryPoint(
+                                timestamp_utc=ts_iso,
+                                latitude=round(lat, 7),
+                                longitude=round(lon, 7),
+                                altitude_m=alt_m,
+                                ground_speed_mps=spd,
+                                yaw_deg=round(hdg / 100.0, 1),
+                                source_channel="MAVLINK_GLOBAL_POSITION_INT"
+                            ))
+                    except Exception:
+                        pass
 
-            # -------------------------------------------------------------
-            # Message 242: HOME_POSITION (lat, lon, alt, x, y, z, q, appro)
-            # Operator / Launch Location recorded in GCS telemetry!
-            # -------------------------------------------------------------
-            elif msg_id == 242 and len(payload) >= 28:
+                # -------------------------------------------------------------
+                # Message 24: GPS_RAW_INT (fix_type, lat, lon, alt, vel, satellites)
+                # -------------------------------------------------------------
+                elif msg_id == 24 and len(payload) >= 30:
+                    try:
+                        lat, lon, alt_mm, vel, sats = 0.0, 0.0, 0, 0, 0
+                        try:
+                            # Try canonical wire order (<QiiiHHHHBB)
+                            time_usec_raw, lat_int, lon_int, alt_mm, eph, epv, vel, cog, fix_type, sats = struct.unpack_from("<QiiiHHHHBB", payload, 0)
+                            lat = lat_int / 1e7
+                            lon = lon_int / 1e7
+                            if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0 and (abs(lat) > 0.001 or abs(lon) > 0.001)):
+                                raise ValueError("Invalid wire coordinates")
+                        except Exception:
+                            # Fallback to logical definition order (<QBiiiHHHHB)
+                            time_usec_raw, fix_type, lat_int, lon_int, alt_mm, eph, epv, vel, cog, sats = struct.unpack_from("<QBiiiHHHHB", payload, 0)
+                            lat = lat_int / 1e7
+                            lon = lon_int / 1e7
+
+                        if (abs(lat) <= 90.0 and abs(lon) <= 180.0 and (abs(lat) > 0.001 or abs(lon) > 0.001) and
+                                not (telemetry and telemetry[-1].source_channel == "MAVLINK_GLOBAL_POSITION_INT" and telemetry[-1].timestamp_utc == ts_iso)):
+                            telemetry.append(TelemetryPoint(
+                                timestamp_utc=ts_iso,
+                                latitude=round(lat, 7),
+                                longitude=round(lon, 7),
+                                altitude_m=round(alt_mm / 1000.0, 2),
+                                ground_speed_mps=round(vel / 100.0, 2),
+                                satellites_visible=sats,
+                                source_channel="MAVLINK_GPS_RAW_INT"
+                            ))
+                    except Exception:
+                        pass
+
+                # -------------------------------------------------------------
+                # Message 242: HOME_POSITION (lat, lon, alt, x, y, z, q, appro)
+                # Operator / Launch Location recorded in GCS telemetry!
+                # -------------------------------------------------------------
+                elif msg_id == 242 and len(payload) >= 28:
+                    try:
+                        home_lat_int, home_lon_int, home_alt_mm = struct.unpack_from("<iii", payload, 0)
+                        h_lat = home_lat_int / 1e7
+                        h_lon = home_lon_int / 1e7
+                        h_alt = round(home_alt_mm / 1000.0, 2)
+                        if abs(h_lat) <= 90.0 and abs(h_lon) <= 180.0 and (abs(h_lat) > 0.001 or abs(h_lon) > 0.001):
+                            op_loc = OperatorLocation(
+                                source="GCS_MAVLINK_HOME_POSITION",
+                                latitude=round(h_lat, 7),
+                                longitude=round(h_lon, 7),
+                                altitude_m=h_alt,
+                                timestamp_utc=ts_iso,
+                                description="Ground Control Station / Vehicle Home Location negotiated over MAVLink"
+                            )
+                            if not any(abs(ol.latitude - op_loc.latitude) < 0.00001 and abs(ol.longitude - op_loc.longitude) < 0.00001 for ol in operator_locations):
+                                operator_locations.append(op_loc)
+                    except Exception:
+                        pass
+
+                # -------------------------------------------------------------
+                # Message 0: HEARTBEAT (custom_mode, type, autopilot, base_mode, system_status)
+                # -------------------------------------------------------------
+                elif msg_id == 0 and len(payload) >= 9:
+                    try:
+                        custom_mode, veh_type, autopilot, base_mode, sys_status, mavlink_ver = struct.unpack_from("<IBBBBB", payload, 0)
+                        is_armed = bool(base_mode & 128)  # MAV_MODE_FLAG_SAFETY_ARMED = 128
+                        if autopilot == 3:
+                            metadata["autopilot_family"] = "ArduPilot"
+                        elif autopilot == 12:
+                            metadata["autopilot_family"] = "PX4"
+
+                        if is_armed and not armed_state:
+                            armed_state = True
+                            events.append(FlightEvent(
+                                event_id=f"GCS-EV-{len(events)+1}",
+                                timestamp_utc=ts_iso,
+                                event_type="ARM",
+                                severity="INFO",
+                                description="Vehicle Armed (Recorded via GCS MAVLink Heartbeat downlink)",
+                                latitude=telemetry[-1].latitude if telemetry else None,
+                                longitude=telemetry[-1].longitude if telemetry else None,
+                                altitude_m=telemetry[-1].altitude_m if telemetry else None
+                            ))
+                        elif not is_armed and armed_state:
+                            armed_state = False
+                            events.append(FlightEvent(
+                                event_id=f"GCS-EV-{len(events)+1}",
+                                timestamp_utc=ts_iso,
+                                event_type="DISARM",
+                                severity="INFO",
+                                description="Vehicle Disarmed / Motors Stopped (GCS MAVLink Heartbeat)",
+                                latitude=telemetry[-1].latitude if telemetry else None,
+                                longitude=telemetry[-1].longitude if telemetry else None,
+                                altitude_m=0.0
+                            ))
+                    except Exception:
+                        pass
+
+                # -------------------------------------------------------------
+                # Message 253: STATUSTEXT (severity, text[50])
+                # Pre-arm checks, failsafes, battery warnings, mode announcements
+                # -------------------------------------------------------------
+                elif msg_id == 253 and len(payload) >= 51:
+                    try:
+                        severity = payload[0]
+                        text_bytes = payload[1:51].split(b"\x00")[0]
+                        status_text = text_bytes.decode("ascii", errors="ignore").strip()
+                        if status_text:
+                            metadata["statustext_messages"].append({"time": ts_iso, "text": status_text, "severity": severity})
+                            sev_cat = "CRITICAL" if severity <= 2 else ("WARNING" if severity <= 4 else "INFO")
+                            ev_type = "FAILSAFE" if ("failsafe" in status_text.lower() or "crash" in status_text.lower()) else "ERROR_ALERT"
+                            events.append(FlightEvent(
+                                event_id=f"GCS-MSG-{len(events)+1}",
+                                timestamp_utc=ts_iso,
+                                event_type=ev_type,
+                                severity=sev_cat,
+                                description=f"GCS Downlink Status: {status_text}",
+                                latitude=telemetry[-1].latitude if telemetry else None,
+                                longitude=telemetry[-1].longitude if telemetry else None,
+                                altitude_m=telemetry[-1].altitude_m if telemetry else None
+                            ))
+                    except Exception:
+                        pass
+            # Synthesize ARM and DISARM if absent
+            if telemetry:
+                has_arm = any(e.event_type == "ARM" for e in events)
+                has_disarm = any(e.event_type == "DISARM" for e in events)
+                if not has_arm:
+                    events.insert(0, FlightEvent(
+                        event_id="GCS-TLOG-ARM",
+                        timestamp_utc=telemetry[0].timestamp_utc,
+                        event_type="ARM",
+                        severity="INFO",
+                        description="GCS Telemetry Stream Initialized / Vehicle Armed",
+                        latitude=telemetry[0].latitude,
+                        longitude=telemetry[0].longitude,
+                        altitude_m=telemetry[0].altitude_m
+                    ))
+                if not has_disarm:
+                    events.append(FlightEvent(
+                        event_id="GCS-TLOG-DISARM",
+                        timestamp_utc=telemetry[-1].timestamp_utc,
+                        event_type="DISARM",
+                        severity="INFO",
+                        description="GCS Telemetry Stream Ended / Safe Shutdown Confirmed",
+                        latitude=telemetry[-1].latitude,
+                        longitude=telemetry[-1].longitude,
+                        altitude_m=telemetry[-1].altitude_m
+                    ))
+        finally:
+            if is_mmap and data is not None:
                 try:
-                    home_lat_int, home_lon_int, home_alt_mm = struct.unpack_from("<iii", payload, 0)
-                    h_lat = home_lat_int / 1e7
-                    h_lon = home_lon_int / 1e7
-                    h_alt = round(home_alt_mm / 1000.0, 2)
-                    if abs(h_lat) <= 90.0 and abs(h_lon) <= 180.0 and (abs(h_lat) > 0.001 or abs(h_lon) > 0.001):
-                        op_loc = OperatorLocation(
-                            source="GCS_MAVLINK_HOME_POSITION",
-                            latitude=round(h_lat, 7),
-                            longitude=round(h_lon, 7),
-                            altitude_m=h_alt,
-                            timestamp_utc=ts_iso,
-                            description="Ground Control Station / Vehicle Home Location negotiated over MAVLink"
-                        )
-                        if not any(abs(ol.latitude - op_loc.latitude) < 0.00001 and abs(ol.longitude - op_loc.longitude) < 0.00001 for ol in operator_locations):
-                            operator_locations.append(op_loc)
+                    data.close()
                 except Exception:
                     pass
-
-            # -------------------------------------------------------------
-            # Message 0: HEARTBEAT (custom_mode, type, autopilot, base_mode, system_status)
-            # -------------------------------------------------------------
-            elif msg_id == 0 and len(payload) >= 9:
-                try:
-                    custom_mode, veh_type, autopilot, base_mode, sys_status, mavlink_ver = struct.unpack_from("<IBBBBB", payload, 0)
-                    is_armed = bool(base_mode & 128)  # MAV_MODE_FLAG_SAFETY_ARMED = 128
-                    if autopilot == 3:
-                        metadata["autopilot_family"] = "ArduPilot"
-                    elif autopilot == 12:
-                        metadata["autopilot_family"] = "PX4"
-
-                    if is_armed and not armed_state:
-                        armed_state = True
-                        events.append(FlightEvent(
-                            event_id=f"GCS-EV-{len(events)+1}",
-                            timestamp_utc=ts_iso,
-                            event_type="ARM",
-                            severity="INFO",
-                            description="Vehicle Armed (Recorded via GCS MAVLink Heartbeat downlink)",
-                            latitude=telemetry[-1].latitude if telemetry else None,
-                            longitude=telemetry[-1].longitude if telemetry else None,
-                            altitude_m=telemetry[-1].altitude_m if telemetry else None
-                        ))
-                    elif not is_armed and armed_state:
-                        armed_state = False
-                        events.append(FlightEvent(
-                            event_id=f"GCS-EV-{len(events)+1}",
-                            timestamp_utc=ts_iso,
-                            event_type="DISARM",
-                            severity="INFO",
-                            description="Vehicle Disarmed / Motors Stopped (GCS MAVLink Heartbeat)",
-                            latitude=telemetry[-1].latitude if telemetry else None,
-                            longitude=telemetry[-1].longitude if telemetry else None,
-                            altitude_m=0.0
-                        ))
-                except Exception:
-                    pass
-
-            # -------------------------------------------------------------
-            # Message 253: STATUSTEXT (severity, text[50])
-            # Pre-arm checks, failsafes, battery warnings, mode announcements
-            # -------------------------------------------------------------
-            elif msg_id == 253 and len(payload) >= 51:
-                try:
-                    severity = payload[0]
-                    text_bytes = payload[1:51].split(b"\x00")[0]
-                    status_text = text_bytes.decode("ascii", errors="ignore").strip()
-                    if status_text:
-                        metadata["statustext_messages"].append({"time": ts_iso, "text": status_text, "severity": severity})
-                        sev_cat = "CRITICAL" if severity <= 2 else ("WARNING" if severity <= 4 else "INFO")
-                        ev_type = "FAILSAFE" if ("failsafe" in status_text.lower() or "crash" in status_text.lower()) else "ERROR_ALERT"
-                        events.append(FlightEvent(
-                            event_id=f"GCS-MSG-{len(events)+1}",
-                            timestamp_utc=ts_iso,
-                            event_type=ev_type,
-                            severity=sev_cat,
-                            description=f"GCS Downlink Status: {status_text}",
-                            latitude=telemetry[-1].latitude if telemetry else None,
-                            longitude=telemetry[-1].longitude if telemetry else None,
-                            altitude_m=telemetry[-1].altitude_m if telemetry else None
-                        ))
-                except Exception:
-                    pass
-
-        # Synthesize ARM and DISARM if absent
-        if telemetry:
-            has_arm = any(e.event_type == "ARM" for e in events)
-            has_disarm = any(e.event_type == "DISARM" for e in events)
-            if not has_arm:
-                events.insert(0, FlightEvent(
-                    event_id="GCS-TLOG-ARM",
-                    timestamp_utc=telemetry[0].timestamp_utc,
-                    event_type="ARM",
-                    severity="INFO",
-                    description="GCS Telemetry Stream Initialized / Vehicle Armed",
-                    latitude=telemetry[0].latitude,
-                    longitude=telemetry[0].longitude,
-                    altitude_m=telemetry[0].altitude_m
-                ))
-            if not has_disarm:
-                events.append(FlightEvent(
-                    event_id="GCS-TLOG-DISARM",
-                    timestamp_utc=telemetry[-1].timestamp_utc,
-                    event_type="DISARM",
-                    severity="INFO",
-                    description="GCS Telemetry Stream Ended / Safe Shutdown Confirmed",
-                    latitude=telemetry[-1].latitude,
-                    longitude=telemetry[-1].longitude,
-                    altitude_m=telemetry[-1].altitude_m
-                ))
 
         metadata["telemetry_points_extracted"] = len(telemetry)
         metadata["events_extracted"] = len(events)

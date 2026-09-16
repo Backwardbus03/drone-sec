@@ -5,7 +5,7 @@ Supports Parrot Anafi, Bebop, and Disco flight records (.pud binary and FreeFlig
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta
 from dft.plugins.base import DroneForensicPlugin
 from dft.core.models import TelemetryPoint, FlightEvent
@@ -49,14 +49,32 @@ class ParrotPlugin(DroneForensicPlugin):
             return False
         return False
 
-    def parse_telemetry(self, file_path: Path) -> List[TelemetryPoint]:
+    def parse_all(self, file_path: Path) -> Tuple[List[TelemetryPoint], List[FlightEvent], Dict[str, Any]]:
         ext = file_path.suffix.lower()
+
+        # Check for Parrot FlightPlan .mavlink
         if ext == ".mavlink":
-            plan, pts, _, _ = GCSAnalyzer.parse_parrot_flightplan(file_path)
-            return pts
+            plan, pts, events, op_locs = GCSAnalyzer.parse_parrot_flightplan(file_path)
+            meta: Dict[str, Any] = {
+                "platform": "Parrot (FreeFlight FlightPlan Mission)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "total_planned_distance_m": plan.total_planned_distance_m,
+                "planned_max_altitude_m": plan.planned_max_altitude_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return pts, events, meta
 
         points: List[TelemetryPoint] = []
-        base_time = datetime.now(timezone.utc)
+        events: List[FlightEvent] = []
+        meta: Dict[str, Any] = {
+            "platform": "Parrot",
+            "evidence_file": file_path.name,
+            "architecture": "Parrot OS / FreeFlight Ecosystem",
+            "ground_control_station": "Parrot FreeFlight 6 / Skycontroller"
+        }
 
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -64,18 +82,24 @@ class ParrotPlugin(DroneForensicPlugin):
 
             # Check if this JSON is a FlightPlan mission
             if ext == ".json" and ("flightplan" in raw.lower() or '"points"' in raw):
-                plan, pts, _, _ = GCSAnalyzer.parse_parrot_flightplan(file_path)
-                if pts:
-                    return pts
+                plan, pts, plan_events, op_locs = GCSAnalyzer.parse_parrot_flightplan(file_path)
+                if pts or plan_events:
+                    meta["planned_waypoints_count"] = len(plan.waypoints)
+                    meta["total_planned_distance_m"] = plan.total_planned_distance_m
+                    if op_locs:
+                        meta["operator_location"] = op_locs[0].model_dump()
+                    return pts, plan_events, meta
 
-            # Attempt JSON parse
-            # Try to find JSON start if wrapped in binary header
+            # Standard FreeFlight JSON or PUD dump
             json_start = raw.find("{")
             if json_start != -1:
                 data = json.loads(raw[json_start:])
-                details = data.get("details", []) or data.get("points", []) or data.get("records", [])
+                meta["run_id"] = data.get("run_id")
+                meta["product_name"] = data.get("product_name", "Parrot Anafi/Bebop")
+                meta["serial_number"] = data.get("serial_number")
 
-                date_str = data.get("date") or base_time.isoformat()
+                details = data.get("details", []) or data.get("points", []) or data.get("records", [])
+                date_str = data.get("date") or datetime.now(timezone.utc).isoformat()
 
                 for pt in details:
                     lat = pt.get("latitude") or pt.get("lat")
@@ -96,31 +120,10 @@ class ParrotPlugin(DroneForensicPlugin):
                         ))
         except Exception:
             pass
-        return points
 
-    def parse_events(self, file_path: Path) -> List[FlightEvent]:
-        ext = file_path.suffix.lower()
-        if ext == ".mavlink":
-            _, _, events, _ = GCSAnalyzer.parse_parrot_flightplan(file_path)
-            return events
-
-        if ext == ".json":
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read(1024)
-                if "flightplan" in content.lower() or '"points"' in content:
-                    _, _, events, _ = GCSAnalyzer.parse_parrot_flightplan(file_path)
-                    if events:
-                        return events
-            except Exception:
-                pass
-
-        events: List[FlightEvent] = []
-        pts = self.parse_telemetry(file_path)
-
-        if pts:
-            first_pt = pts[0]
-            last_pt = pts[-1]
+        if points:
+            first_pt = points[0]
+            last_pt = points[-1]
             try:
                 t_last = datetime.fromisoformat(last_pt.timestamp_utc.replace("Z", "+00:00"))
                 t_disarm = (t_last + timedelta(seconds=1)).isoformat()
@@ -168,47 +171,13 @@ class ParrotPlugin(DroneForensicPlugin):
                 altitude_m=0.0
             ))
 
-        return events
+        return points, events, meta
+
+    def parse_telemetry(self, file_path: Path) -> List[TelemetryPoint]:
+        return self._get_cached_or_parse(file_path)[0]
+
+    def parse_events(self, file_path: Path) -> List[FlightEvent]:
+        return self._get_cached_or_parse(file_path)[1]
 
     def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
-        ext = file_path.suffix.lower()
-
-        if ext == ".mavlink":
-            plan, _, _, op_locs = GCSAnalyzer.parse_parrot_flightplan(file_path)
-            meta: Dict[str, Any] = {
-                "platform": "Parrot (FreeFlight FlightPlan Mission)",
-                "evidence_file": file_path.name,
-                "ground_control_station": plan.gcs_name,
-                "planned_waypoints_count": len(plan.waypoints),
-                "total_planned_distance_m": plan.total_planned_distance_m,
-                "planned_max_altitude_m": plan.planned_max_altitude_m
-            }
-            if op_locs:
-                meta["operator_location"] = op_locs[0].model_dump()
-            return meta
-
-        meta = {
-            "platform": "Parrot",
-            "evidence_file": file_path.name,
-            "architecture": "Parrot OS / FreeFlight Ecosystem",
-            "ground_control_station": "Parrot FreeFlight 6 / Skycontroller"
-        }
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read(4096)
-            json_start = content.find("{")
-            if json_start != -1:
-                data = json.loads(content[json_start:])
-                meta["run_id"] = data.get("run_id")
-                meta["product_name"] = data.get("product_name", "Parrot Anafi/Bebop")
-                meta["serial_number"] = data.get("serial_number")
-
-                if "points" in data or "flightPlan" in data:
-                    plan, _, _, op_locs = GCSAnalyzer.parse_parrot_flightplan(file_path)
-                    meta["planned_waypoints_count"] = len(plan.waypoints)
-                    meta["total_planned_distance_m"] = plan.total_planned_distance_m
-                    if op_locs:
-                        meta["operator_location"] = op_locs[0].model_dump()
-        except Exception:
-            pass
-        return meta
+        return self._get_cached_or_parse(file_path)[2]

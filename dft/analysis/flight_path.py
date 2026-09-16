@@ -7,7 +7,7 @@ and generates standardized KML (Google Earth) and GeoJSON representations.
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from dft.core.models import TelemetryPoint, FlightSummary, FlightEvent
-from dft.analysis.geofence import haversine_distance_meters
+from dft.analysis.geofence import haversine_distance_meters, haversine_distance_pairwise_vectorized
 
 
 class FlightPathAnalyzer:
@@ -67,10 +67,12 @@ class FlightPathAnalyzer:
         max_alt = max(p.altitude_m for p in telemetry)
         max_speed = max(p.ground_speed_mps for p in telemetry)
 
-        for i in range(1, len(telemetry)):
-            p1 = telemetry[i - 1]
-            p2 = telemetry[i]
-            total_distance += haversine_distance_meters(p1.latitude, p1.longitude, p2.latitude, p2.longitude)
+        if len(telemetry) > 1:
+            import numpy as np
+            lats = np.array([p.latitude for p in telemetry], dtype=np.float64)
+            lons = np.array([p.longitude for p in telemetry], dtype=np.float64)
+            pairwise_dists = haversine_distance_pairwise_vectorized(lats[:-1], lons[:-1], lats[1:], lons[1:])
+            total_distance = float(np.sum(pairwise_dists))
 
         # Duration calculation
         start_time = telemetry[0].timestamp_utc

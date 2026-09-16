@@ -4,6 +4,7 @@ Enforces an append-only audit trail linking each entry with HMAC-SHA256 signatur
 and previous entry hashes, compliant with ISO/IEC 27037:2012.
 """
 
+import os
 import sqlite3
 import hmac
 import hashlib
@@ -12,7 +13,12 @@ from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 from dft.core.models import AuditLogEntry
 
-DEFAULT_HMAC_SECRET = b"DFT_SECURE_FORENSIC_MASTER_KEY_2026_IITB"
+# Read from DFT_HMAC_SECRET env var; hardcoded default is only for local dev.
+# ALWAYS set a strong secret in production (Render dashboard > Environment).
+DEFAULT_HMAC_SECRET = os.getenv(
+    "DFT_HMAC_SECRET",
+    "DFT_SECURE_FORENSIC_MASTER_KEY_2026_IITB"
+).encode()
 
 
 class ChainOfCustodyManager:

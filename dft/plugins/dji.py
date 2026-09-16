@@ -4,12 +4,25 @@ Supports DJI proprietary .DAT, decrypted .txt flight records, and video subtitle
 """
 
 import re
+import mmap
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from datetime import datetime, timezone
 from dft.plugins.base import DroneForensicPlugin
 from dft.core.models import TelemetryPoint, FlightEvent
 from dft.analysis.gcs import GCSAnalyzer
+
+SRT_TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+SRT_LAT_RE = re.compile(r"(?:latitude|lat)[:\s]+([+-]?\d+\.\d+)", re.IGNORECASE)
+SRT_LON_RE = re.compile(r"(?:longitude|lon)[:\s]+([+-]?\d+\.\d+)", re.IGNORECASE)
+SRT_ALT_RE = re.compile(r"(?:altitude|alt|rel_alt)[:\s]+([+-]?\d+(?:\.\d+)?)", re.IGNORECASE)
+SRT_SPEED_RE = re.compile(r"(?:hspeed|speed)[:\s]+([+-]?\d+(?:\.\d+)?)", re.IGNORECASE)
+SRT_PITCH_RE = re.compile(r"pitch[:\s]+([+-]?\d+(?:\.\d+)?)", re.IGNORECASE)
+SRT_YAW_RE = re.compile(r"yaw[:\s]+([+-]?\d+(?:\.\d+)?)", re.IGNORECASE)
+
+DAT_LAT_RE = re.compile(r"lat[=:\s]+([+-]?\d+\.\d+)", re.IGNORECASE)
+DAT_LON_RE = re.compile(r"lon[=:\s]+([+-]?\d+\.\d+)", re.IGNORECASE)
+DAT_ALT_RE = re.compile(r"alt[=:\s]+([+-]?\d+(?:\.\d+)?)", re.IGNORECASE)
 
 
 class DJIPlugin(DroneForensicPlugin):
@@ -63,9 +76,37 @@ class DJIPlugin(DroneForensicPlugin):
             return False
         return False
 
-    def parse_telemetry(self, file_path: Path) -> List[TelemetryPoint]:
+    def parse_all(self, file_path: Path) -> Tuple[List[TelemetryPoint], List[FlightEvent], Dict[str, Any]]:
         ext = file_path.suffix.lower()
-        points: List[TelemetryPoint] = []
+        if ext in [".kml", ".kmz"]:
+            plan, points, events, op_locs = GCSAnalyzer.parse_dji_wpml(file_path)
+            meta = {
+                "platform": "DJI Enterprise (DJI Pilot 2 WPML Mission Plan)",
+                "evidence_file": file_path.name,
+                "ground_control_station": plan.gcs_name,
+                "planned_waypoints_count": len(plan.waypoints),
+                "total_planned_distance_m": plan.total_planned_distance_m,
+                "planned_max_altitude_m": plan.planned_max_altitude_m
+            }
+            if op_locs:
+                meta["operator_location"] = op_locs[0].model_dump()
+            return points, events, meta
+
+        if ext == ".json":
+            try:
+                plan, points, events, op_locs = GCSAnalyzer.parse_dji_gspro(file_path)
+                meta = {
+                    "platform": "DJI (Ground Station Pro Mission)",
+                    "evidence_file": file_path.name,
+                    "ground_control_station": plan.gcs_name,
+                    "planned_waypoints_count": len(plan.waypoints),
+                    "total_planned_distance_m": plan.total_planned_distance_m
+                }
+                if op_locs:
+                    meta["operator_location"] = op_locs[0].model_dump()
+                return points, events, meta
+            except Exception:
+                pass
 
         if ext == ".srt":
             points = self._parse_srt(file_path)
@@ -73,12 +114,15 @@ class DJIPlugin(DroneForensicPlugin):
             points = self._parse_txt_csv(file_path)
         elif ext == ".dat":
             points = self._parse_dat(file_path)
-        elif ext in [".kml", ".kmz"]:
-            plan, points, _, _ = GCSAnalyzer.parse_dji_wpml(file_path)
-        elif ext == ".json":
-            plan, points, _, _ = GCSAnalyzer.parse_dji_gspro(file_path)
+        else:
+            points = []
 
-        return points
+        events = self._synthesize_events(points)
+        meta = self._extract_telemetry_metadata(file_path, ext)
+        return points, events, meta
+
+    def parse_telemetry(self, file_path: Path) -> List[TelemetryPoint]:
+        return self._get_cached_or_parse(file_path)[0]
 
     def _parse_srt(self, file_path: Path) -> List[TelemetryPoint]:
         """Parses DJI embedded video subtitles containing GPS and camera telemetry."""
@@ -93,17 +137,15 @@ class DJIPlugin(DroneForensicPlugin):
                 if len(lines) < 3:
                     continue
 
-                ts_match = re.search(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)", block)
+                ts_match = SRT_TS_RE.search(block)
                 timestamp_str = ts_match.group(1).replace(" ", "T") + "Z" if ts_match else datetime.now(timezone.utc).isoformat()
 
-                # Regex patterns for DJI SRT format:
-                # [latitude: 19.1334] [longitude: 72.9133] [altitude: 45.2]
-                lat_m = re.search(r"(?:latitude|lat)[:\s]+([+-]?\d+\.\d+)", block, re.IGNORECASE)
-                lon_m = re.search(r"(?:longitude|lon)[:\s]+([+-]?\d+\.\d+)", block, re.IGNORECASE)
-                alt_m = re.search(r"(?:altitude|alt|rel_alt)[:\s]+([+-]?\d+(?:\.\d+)?)", block, re.IGNORECASE)
-                speed_m = re.search(r"(?:hspeed|speed)[:\s]+([+-]?\d+(?:\.\d+)?)", block, re.IGNORECASE)
-                pitch_m = re.search(r"pitch[:\s]+([+-]?\d+(?:\.\d+)?)", block, re.IGNORECASE)
-                yaw_m = re.search(r"yaw[:\s]+([+-]?\d+(?:\.\d+)?)", block, re.IGNORECASE)
+                lat_m = SRT_LAT_RE.search(block)
+                lon_m = SRT_LON_RE.search(block)
+                alt_m = SRT_ALT_RE.search(block)
+                speed_m = SRT_SPEED_RE.search(block)
+                pitch_m = SRT_PITCH_RE.search(block)
+                yaw_m = SRT_YAW_RE.search(block)
 
                 if lat_m and lon_m:
                     lat = float(lat_m.group(1))
@@ -229,142 +271,116 @@ class DJIPlugin(DroneForensicPlugin):
         points: List[TelemetryPoint] = []
         try:
             with open(file_path, "rb") as f:
-                data = f.read()
-
-            # Check if file has plaintext markers or CSV embed
-            if b"OSD" in data or b"latitude" in data:
-                text_part = data.decode("utf-8", errors="ignore")
-                for line in text_part.splitlines():
-                    lat_m = re.search(r"lat[=:\s]+([+-]?\d+\.\d+)", line, re.IGNORECASE)
-                    lon_m = re.search(r"lon[=:\s]+([+-]?\d+\.\d+)", line, re.IGNORECASE)
-                    alt_m = re.search(r"alt[=:\s]+([+-]?\d+(?:\.\d+)?)", line, re.IGNORECASE)
-                    if lat_m and lon_m:
-                        points.append(TelemetryPoint(
-                            timestamp_utc=datetime.now(timezone.utc).isoformat(),
-                            latitude=float(lat_m.group(1)),
-                            longitude=float(lon_m.group(1)),
-                            altitude_m=float(alt_m.group(1)) if alt_m else 10.0,
-                            source_channel="DJI_DAT_PAYLOAD"
-                        ))
+                try:
+                    data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                except Exception:
+                    data = f.read()
+            try:
+                # Check if file has plaintext markers or CSV embed
+                has_osd = (data.find(b"OSD") != -1) if hasattr(data, "find") else (b"OSD" in data)
+                has_lat = (data.find(b"latitude") != -1) if hasattr(data, "find") else (b"latitude" in data)
+                if has_osd or has_lat:
+                    text_part = bytes(data).decode("utf-8", errors="ignore")
+                    now_iso = None
+                    for line in text_part.splitlines():
+                        lat_m = DAT_LAT_RE.search(line)
+                        lon_m = DAT_LON_RE.search(line)
+                        alt_m = DAT_ALT_RE.search(line)
+                        if lat_m and lon_m:
+                            if now_iso is None:
+                                now_iso = datetime.now(timezone.utc).isoformat()
+                            points.append(TelemetryPoint(
+                                timestamp_utc=now_iso,
+                                latitude=float(lat_m.group(1)),
+                                longitude=float(lon_m.group(1)),
+                                altitude_m=float(alt_m.group(1)) if alt_m else 10.0,
+                                source_channel="DJI_DAT_PAYLOAD"
+                            ))
+            finally:
+                if hasattr(data, "close"):
+                    data.close()
         except Exception:
             pass
         return points
 
-    def parse_events(self, file_path: Path) -> List[FlightEvent]:
-        ext = file_path.suffix.lower()
-        if ext in [".kml", ".kmz"]:
-            _, _, events, _ = GCSAnalyzer.parse_dji_wpml(file_path)
-            return events
-        elif ext == ".json":
-            _, _, events, _ = GCSAnalyzer.parse_dji_gspro(file_path)
-            return events
-
+    def _synthesize_events(self, points: List[TelemetryPoint]) -> List[FlightEvent]:
         events: List[FlightEvent] = []
-        points = self.parse_telemetry(file_path)
+        if not points:
+            return events
 
-        if points:
-            # Generate synthesized flight lifecycle events from telemetry anchors
-            first_pt = points[0]
-            last_pt = points[-1]
+        # Generate synthesized flight lifecycle events from telemetry anchors
+        first_pt = points[0]
+        last_pt = points[-1]
 
+        events.append(FlightEvent(
+            event_id="DJI-EV-001",
+            timestamp_utc=first_pt.timestamp_utc,
+            event_type="ARM",
+            severity="INFO",
+            description="Motors armed, flight telemetry session initialized",
+            latitude=first_pt.latitude,
+            longitude=first_pt.longitude,
+            altitude_m=first_pt.altitude_m
+        ))
+
+        events.append(FlightEvent(
+            event_id="DJI-EV-002",
+            timestamp_utc=first_pt.timestamp_utc,
+            event_type="TAKEOFF",
+            severity="INFO",
+            description="UAV airborne and ascending",
+            latitude=first_pt.latitude,
+            longitude=first_pt.longitude,
+            altitude_m=first_pt.altitude_m
+        ))
+
+        # Detect maximum altitude or battery drop warning events
+        max_alt_pt = max(points, key=lambda p: p.altitude_m)
+        if max_alt_pt.altitude_m > 120.0:  # Standard 120m DGCA/FAA ceiling
             events.append(FlightEvent(
-                event_id="DJI-EV-001",
-                timestamp_utc=first_pt.timestamp_utc,
-                event_type="ARM",
-                severity="INFO",
-                description="Motors armed, flight telemetry session initialized",
-                latitude=first_pt.latitude,
-                longitude=first_pt.longitude,
-                altitude_m=first_pt.altitude_m
+                event_id="DJI-EV-003",
+                timestamp_utc=max_alt_pt.timestamp_utc,
+                event_type="ERROR_ALERT",
+                severity="WARNING",
+                description=f"Regulatory ceiling warning: altitude reached {max_alt_pt.altitude_m:.1f}m (>120m limit)",
+                latitude=max_alt_pt.latitude,
+                longitude=max_alt_pt.longitude,
+                altitude_m=max_alt_pt.altitude_m
             ))
 
-            events.append(FlightEvent(
-                event_id="DJI-EV-002",
-                timestamp_utc=first_pt.timestamp_utc,
-                event_type="TAKEOFF",
-                severity="INFO",
-                description="UAV airborne and ascending",
-                latitude=first_pt.latitude,
-                longitude=first_pt.longitude,
-                altitude_m=first_pt.altitude_m
-            ))
+        events.append(FlightEvent(
+            event_id="DJI-EV-004",
+            timestamp_utc=last_pt.timestamp_utc,
+            event_type="LANDING",
+            severity="INFO",
+            description="UAV touchdown confirmed",
+            latitude=last_pt.latitude,
+            longitude=last_pt.longitude,
+            altitude_m=last_pt.altitude_m
+        ))
 
-            # Detect maximum altitude or battery drop warning events
-            max_alt_pt = max(points, key=lambda p: p.altitude_m)
-            if max_alt_pt.altitude_m > 120.0:  # Standard 120m DGCA/FAA ceiling
-                events.append(FlightEvent(
-                    event_id="DJI-EV-003",
-                    timestamp_utc=max_alt_pt.timestamp_utc,
-                    event_type="ERROR_ALERT",
-                    severity="WARNING",
-                    description=f"Regulatory ceiling warning: altitude reached {max_alt_pt.altitude_m:.1f}m (>120m limit)",
-                    latitude=max_alt_pt.latitude,
-                    longitude=max_alt_pt.longitude,
-                    altitude_m=max_alt_pt.altitude_m
-                ))
+        # Disarm event at the end of flight session
+        try:
+            from datetime import timedelta
+            t_last = datetime.fromisoformat(last_pt.timestamp_utc.replace("Z", "+00:00"))
+            t_disarm = (t_last + timedelta(seconds=1)).isoformat()
+        except Exception:
+            t_disarm = last_pt.timestamp_utc
 
-            events.append(FlightEvent(
-                event_id="DJI-EV-004",
-                timestamp_utc=last_pt.timestamp_utc,
-                event_type="LANDING",
-                severity="INFO",
-                description="UAV touchdown confirmed",
-                latitude=last_pt.latitude,
-                longitude=last_pt.longitude,
-                altitude_m=last_pt.altitude_m
-            ))
-
-            # Disarm event at the end of flight session
-            try:
-                from datetime import timedelta
-                t_last = datetime.fromisoformat(last_pt.timestamp_utc.replace("Z", "+00:00"))
-                t_disarm = (t_last + timedelta(seconds=1)).isoformat()
-            except Exception:
-                t_disarm = last_pt.timestamp_utc
-
-            events.append(FlightEvent(
-                event_id="DJI-EV-005",
-                timestamp_utc=t_disarm,
-                event_type="DISARM",
-                severity="INFO",
-                description="Flight controller disarmed - Motors stopped",
-                latitude=last_pt.latitude,
-                longitude=last_pt.longitude,
-                altitude_m=0.0
-            ))
+        events.append(FlightEvent(
+            event_id="DJI-EV-005",
+            timestamp_utc=t_disarm,
+            event_type="DISARM",
+            severity="INFO",
+            description="Flight controller disarmed - Motors stopped",
+            latitude=last_pt.latitude,
+            longitude=last_pt.longitude,
+            altitude_m=0.0
+        ))
 
         return events
 
-    def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
-        ext = file_path.suffix.lower()
-
-        if ext in [".kml", ".kmz"]:
-            plan, _, _, op_locs = GCSAnalyzer.parse_dji_wpml(file_path)
-            meta: Dict[str, Any] = {
-                "platform": "DJI Enterprise (DJI Pilot 2 WPML Mission Plan)",
-                "evidence_file": file_path.name,
-                "ground_control_station": plan.gcs_name,
-                "planned_waypoints_count": len(plan.waypoints),
-                "total_planned_distance_m": plan.total_planned_distance_m,
-                "planned_max_altitude_m": plan.planned_max_altitude_m
-            }
-            if op_locs:
-                meta["operator_location"] = op_locs[0].model_dump()
-            return meta
-
-        if ext == ".json":
-            plan, _, _, op_locs = GCSAnalyzer.parse_dji_gspro(file_path)
-            meta = {
-                "platform": "DJI (Ground Station Pro Mission)",
-                "evidence_file": file_path.name,
-                "ground_control_station": plan.gcs_name,
-                "planned_waypoints_count": len(plan.waypoints),
-                "total_planned_distance_m": plan.total_planned_distance_m
-            }
-            if op_locs:
-                meta["operator_location"] = op_locs[0].model_dump()
-            return meta
-
+    def _extract_telemetry_metadata(self, file_path: Path, ext: str) -> Dict[str, Any]:
         meta = {
             "platform": "DJI",
             "evidence_file": file_path.name,
@@ -391,3 +407,9 @@ class DJIPlugin(DroneForensicPlugin):
                 pass
 
         return meta
+
+    def parse_events(self, file_path: Path) -> List[FlightEvent]:
+        return self._get_cached_or_parse(file_path)[1]
+
+    def extract_metadata(self, file_path: Path) -> Dict[str, Any]:
+        return self._get_cached_or_parse(file_path)[2]

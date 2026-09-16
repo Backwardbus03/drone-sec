@@ -1,8 +1,3 @@
-"""
-Plugin Manager for Drone Forensic Toolkit.
-Provides dynamic registry, signature detection, and multi-format parsing.
-"""
-
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 from dft.plugins.base import DroneForensicPlugin
@@ -12,6 +7,19 @@ from dft.plugins.px4 import PX4Plugin
 from dft.plugins.parrot import ParrotPlugin
 from dft.plugins.betaflight import BetaflightPlugin
 from dft.core.models import TelemetryPoint, FlightEvent
+
+
+def _worker_parse_single_file(file_path_str: str) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    """Standalone worker for ProcessPoolExecutor serialization."""
+    path = Path(file_path_str)
+    mgr = PluginManager()
+    plat_id, telemetry, events, meta = mgr.parse_evidence(path)
+    return (
+        plat_id,
+        [p.model_dump() for p in telemetry],
+        [e.model_dump() for e in events],
+        meta
+    )
 
 
 class PluginManager:
@@ -52,7 +60,7 @@ class PluginManager:
 
     def parse_evidence(self, file_path: Path) -> Tuple[str, List[TelemetryPoint], List[FlightEvent], Dict[str, Any]]:
         """
-        Parses evidence file and returns (platform_id, telemetry_points, events, metadata).
+        Parses evidence file in a single pass and returns (platform_id, telemetry_points, events, metadata).
         """
         plugin = self.detect_platform(file_path)
         if not plugin:
@@ -71,8 +79,38 @@ class PluginManager:
             else:
                 plugin = DJIPlugin()  # Default fallback
 
-        telemetry = plugin.parse_telemetry(file_path)
-        events = plugin.parse_events(file_path)
-        metadata = plugin.extract_metadata(file_path)
-
+        telemetry, events, metadata = plugin.parse_all(file_path)
         return plugin.platform_id, telemetry, events, metadata
+
+    def batch_parse_evidence(
+        self, file_paths: List[Path], max_workers: Optional[int] = None
+    ) -> List[Tuple[str, List[TelemetryPoint], List[FlightEvent], Dict[str, Any]]]:
+        """
+        Parallelized ingestion across multiple evidence files using ProcessPoolExecutor.
+        Scales CPU-bound parser workloads across cores.
+        """
+        if not file_paths:
+            return []
+
+        if len(file_paths) == 1:
+            return [self.parse_evidence(file_paths[0])]
+
+        results: List[Tuple[str, List[TelemetryPoint], List[FlightEvent], Dict[str, Any]]] = []
+        path_strs = [str(p.resolve()) for p in file_paths]
+
+        try:
+            from concurrent.futures import ProcessPoolExecutor
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                raw_results = list(executor.map(_worker_parse_single_file, path_strs))
+
+            for plat_id, tel_dicts, ev_dicts, meta in raw_results:
+                telemetry = [TelemetryPoint(**td) for td in tel_dicts]
+                events = [FlightEvent(**ed) for ed in ev_dicts]
+                results.append((plat_id, telemetry, events, meta))
+        except Exception:
+            # Fallback to sequential execution if multiprocessing context fails
+            for p in file_paths:
+                results.append(self.parse_evidence(p))
+
+        return results
+

@@ -8,10 +8,11 @@ Provides seamless fallback storage if ChromaDB is unavailable.
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import json
+import os
 import sqlite3
 import numpy as np
 
-VECTOR_DB_DIR = Path("forensic_cases_vault") / "vector_db"
+VECTOR_DB_DIR = Path(os.getenv("DFT_DATA_DIR", "forensic_cases_vault")) / "vector_db"
 VECTOR_DB_DIR.mkdir(parents=True, exist_ok=True)
 
 _CHROMA_CLIENT = None
