@@ -21,7 +21,7 @@ REAL_WORLD_RESTRICTED_SPACES: List[Dict] = [
         "zone_type": "circle",
         "center_lat": 19.0896,
         "center_lon": 72.8656,
-        "radius_meters": 5000.0,
+        "radius_meters": 15000.0,
         "max_altitude_m": 0.0,
         "description": "DGCA Red Zone under Drone Rules 2021: Within 5 km of international airport perimeter. Absolute UAV prohibition.",
         "is_preconfigured_nofly": True,
@@ -718,9 +718,5 @@ def get_default_core_presets() -> List[GeofenceZone]:
     """
     core_ids = {
         "ZONE-AIRPORT-BOM",
-        "ZONE-AIRDROME-VAJJ",
-        "ZONE-GOV-MANTRALAYA",
-        "ZONE-STRAT-BARC",
-        "ZONE-BUFFER-IITB",
     }
     return [GeofenceZone(**z) for z in REAL_WORLD_RESTRICTED_SPACES if z["zone_id"] in core_ids]
