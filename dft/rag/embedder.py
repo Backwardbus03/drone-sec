@@ -9,22 +9,61 @@ import time
 import logging
 import re
 from typing import List
+from collections import deque
 import hashlib
 import numpy as np
 
 logger = logging.getLogger("dft.embedder")
 
 _LAST_CALL_TIMESTAMP = 0.0
-# Minimum delay between batches in seconds to respect API rate limits (default 2.0s)
-MIN_CALL_INTERVAL_SEC = float(os.getenv("EMBEDDER_RATE_LIMIT_DELAY", "2.0"))
+# Minimum delay between consecutive batches in seconds
+MIN_CALL_INTERVAL_SEC = float(os.getenv("EMBEDDER_RATE_LIMIT_DELAY", "1.5"))
+# Google Free Tier enforces a hard cap of 100 items per minute for embed_content.
+# We set the maximum ceiling to 80 to provide a safe 20% buffer against quota violations.
+MAX_ITEMS_PER_MINUTE = int(os.getenv("EMBEDDER_MAX_ITEMS_PER_MINUTE", "80"))
+_CALL_HISTORY: deque = deque()
 
-def _throttle():
-    """Enforces a minimum interval between outbound API embedding requests."""
-    global _LAST_CALL_TIMESTAMP
-    elapsed = time.time() - _LAST_CALL_TIMESTAMP
+
+def _throttle(item_count: int):
+    """
+    Enforces a strict sliding-window rate limit:
+    1. Ensures minimum spacing between consecutive API calls.
+    2. Guarantees that total items submitted across any rolling 60-second window <= MAX_ITEMS_PER_MINUTE.
+    """
+    global _LAST_CALL_TIMESTAMP, _CALL_HISTORY
+    now = time.time()
+
+    # 1. Minimum pause between consecutive requests
+    elapsed = now - _LAST_CALL_TIMESTAMP
     if elapsed < MIN_CALL_INTERVAL_SEC:
         time.sleep(MIN_CALL_INTERVAL_SEC - elapsed)
+        now = time.time()
+
+    # 2. Prune records older than 60 seconds
+    cutoff = now - 60.0
+    while _CALL_HISTORY and _CALL_HISTORY[0][0] < cutoff:
+        _CALL_HISTORY.popleft()
+
+    # 3. Check if adding this batch breaches our rolling minute budget
+    current_window_items = sum(count for _, count in _CALL_HISTORY)
+    while current_window_items + item_count > MAX_ITEMS_PER_MINUTE and _CALL_HISTORY:
+        oldest_ts, _ = _CALL_HISTORY[0]
+        sleep_needed = (oldest_ts + 60.05) - time.time()
+        if sleep_needed > 0:
+            logger.info(
+                f"Pacing embedding request to protect 100 items/min quota: "
+                f"sleeping {sleep_needed:.1f}s ({current_window_items} items in current 60s window)"
+            )
+            time.sleep(sleep_needed)
+        now = time.time()
+        cutoff = now - 60.0
+        while _CALL_HISTORY and _CALL_HISTORY[0][0] < cutoff:
+            _CALL_HISTORY.popleft()
+        current_window_items = sum(count for _, count in _CALL_HISTORY)
+
+    _CALL_HISTORY.append((time.time(), item_count))
     _LAST_CALL_TIMESTAMP = time.time()
+
 
 def _fallback_hash_embed(text: str, dim: int = 768) -> List[float]:
     """
@@ -71,8 +110,8 @@ def embed(texts: List[str]) -> List[List[float]]:
             client = genai.Client(api_key=api_key)
             
             all_embeddings = []
-            # Small default batch size (15) prevents hitting token-per-minute (TPM) limits on Gemini free tier
-            batch_size = max(1, int(os.getenv("EMBEDDER_BATCH_SIZE", "15")))
+            # Default batch size 20 items per request
+            batch_size = max(1, int(os.getenv("EMBEDDER_BATCH_SIZE", "20")))
             
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i+batch_size]
@@ -84,7 +123,7 @@ def embed(texts: List[str]) -> List[List[float]]:
                 
                 for attempt in range(max_retries):
                     try:
-                        _throttle()
+                        _throttle(len(batch_texts))
                         response = client.models.embed_content(
                             model='gemini-embedding-001',
                             contents=batch_texts,

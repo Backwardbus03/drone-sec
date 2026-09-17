@@ -96,7 +96,7 @@ def chunk_anomalies(anomalies: List[AnomalyReport], case_id: str) -> List[Dict[s
     return chunks
 
 
-def chunk_telemetry_windows(telemetry: List[TelemetryPoint], case_id: str, window_size: int = 30) -> List[Dict[str, Any]]:
+def chunk_telemetry_windows(telemetry: List[TelemetryPoint], case_id: str, window_size: int = 60) -> List[Dict[str, Any]]:
     """
     Condenses high-frequency telemetry into sliding temporal windows to optimize RAG token efficiency
     while capturing speed, altitude envelope, attitude, and battery draw.
@@ -106,7 +106,7 @@ def chunk_telemetry_windows(telemetry: List[TelemetryPoint], case_id: str, windo
 
     chunks = []
     total = len(telemetry)
-    step = max(1, window_size // 2)
+    step = max(1, int(window_size * 0.75))
 
     for i in range(0, total, step):
         window = telemetry[i:i + window_size]

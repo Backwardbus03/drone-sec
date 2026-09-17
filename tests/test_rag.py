@@ -18,7 +18,7 @@ from dft.rag.chunker import (
 )
 from dft.rag.embedder import embed, get_embedding_dimension
 from dft.rag.vector_store import (
-    get_case_collection, upsert_chunks, query_case_vector_store,
+    upsert_chunks, query_case_vector_store,
     count_case_chunks, delete_case_collection
 )
 from dft.rag.ingest import ingest_case

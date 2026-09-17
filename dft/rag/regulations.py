@@ -7,7 +7,7 @@ Provides domain context for:
 - FAA 14 CFR Part 107 (Airspace authorizations, 400ft ceiling, visual line-of-sight)
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 REGULATION_CORPUS = [
     {
@@ -67,3 +67,32 @@ def get_regulation_chunks() -> List[Dict[str, Any]]:
             }
         })
     return chunks
+
+
+_CACHED_REGULATION_EMBEDDINGS: Optional[List[List[float]]] = None
+
+
+def get_cached_regulation_chunks_and_embeddings(case_id: str):
+    """
+    Returns regulation chunks (tagged with case_id) and their precomputed embeddings.
+    Embeddings are cached in-memory so static regulations are never repeatedly embedded via API.
+    """
+    global _CACHED_REGULATION_EMBEDDINGS
+    from dft.rag.embedder import embed
+
+    raw_chunks = get_regulation_chunks()
+    if _CACHED_REGULATION_EMBEDDINGS is None or len(_CACHED_REGULATION_EMBEDDINGS) != len(raw_chunks):
+        texts = [c["text"] for c in raw_chunks]
+        _CACHED_REGULATION_EMBEDDINGS = embed(texts)
+
+    case_chunks = []
+    for c in raw_chunks:
+        c_copy = {
+            "text": c["text"],
+            "metadata": dict(c["metadata"])
+        }
+        c_copy["metadata"]["case_id"] = case_id
+        case_chunks.append(c_copy)
+
+    return case_chunks, list(_CACHED_REGULATION_EMBEDDINGS)
+
