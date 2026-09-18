@@ -49,6 +49,8 @@ Addressing the critical challenge of hardware fragmentation, proprietary flight 
 
 DFT complies with **ISO/IEC 27037:2012** (*Guidelines for identification, collection, acquisition, and preservation of digital evidence*) and **ISO/IEC 27042:2015** (*Guidelines for analysis and interpretation of digital evidence*), satisfying requirements under the Indian Evidence Act / Bharatiya Sakshya Adhiniyam (BSA) for electronic records.
 
+DFT is deployed and accessible at https://drone-sec-x89f.onrender.com/
+
 ---
 
 ## System Architecture
